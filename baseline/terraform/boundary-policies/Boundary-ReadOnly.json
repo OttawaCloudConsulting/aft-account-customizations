@@ -1,0 +1,69 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowReadOnlyActions",
+      "Effect": "Allow",
+      "Action": [
+        "access-analyzer:Get*",
+        "access-analyzer:List*",
+        "cloudtrail:Get*",
+        "cloudtrail:List*",
+        "cloudtrail:Lookup*",
+        "cloudtrail:Describe*",
+        "cloudwatch:Describe*",
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "config:Describe*",
+        "config:Get*",
+        "config:List*",
+        "config:Select*",
+        "ec2:Describe*",
+        "iam:Get*",
+        "iam:List*",
+        "iam:Generate*",
+        "guardduty:Get*",
+        "guardduty:List*",
+        "securityhub:Describe*",
+        "securityhub:Get*",
+        "securityhub:List*",
+        "s3:List*",
+        "s3:Get*Acl",
+        "s3:Get*Policy",
+        "s3:Get*Configuration",
+        "s3:GetBucket*",
+        "s3:GetEncryption*",
+        "s3:GetLifecycle*",
+        "s3:GetReplication*",
+        "logs:Describe*",
+        "logs:Get*",
+        "logs:List*",
+        "logs:FilterLogEvents",
+        "kms:Describe*",
+        "kms:Get*",
+        "kms:List*",
+        "organizations:Describe*",
+        "organizations:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyS3DataAccess",
+      "Effect": "Deny",
+      "Action": [
+        "s3:GetObject*",
+        "s3:PutObject*"
+      ],
+      "Resource": "arn:aws:s3:::*/*"
+    },
+    {
+      "Sid": "DenySecretsAccess",
+      "Effect": "Deny",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "ssm:GetParameter*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

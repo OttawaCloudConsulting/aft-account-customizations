@@ -1,0 +1,73 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyCreateProtectedRoles",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}"
+    },
+    {
+      "Sid": "DenyModifyProtectedRoles",
+      "Effect": "Deny",
+      "Action": [
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}"
+    },
+    {
+      "Sid": "DenyCreatePermissionBoundaryPolicies",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicy"
+      ],
+      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}"
+    },
+    {
+      "Sid": "DenyModifyAnyBoundaryPolicy",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion"
+      ],
+      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}"
+    },
+    {
+      "Sid": "DenyRemovingBoundaries",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::${account_id}:role/*"
+    },
+    {
+      "Sid": "RequireBoundaryOnRoleCreation",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::${account_id}:role/*",
+      "Condition": {
+        "StringNotEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::${account_id}:policy/${boundary_name}"
+        }
+      }
+    }
+  ]
+}
