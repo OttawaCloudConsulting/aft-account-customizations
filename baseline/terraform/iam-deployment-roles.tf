@@ -1,0 +1,115 @@
+# IAM Deployment Roles
+# Platform and application deployment roles for automation account
+# Trusted by AFT automation account via broker roles with Organization validation
+
+# Retrieve AFT management (automation) account ID from SSM Parameter Store
+# AFT populates this parameter during initial deployment
+data "aws_ssm_parameter" "aft_management_account_id" {
+  name = "/aft/account/aft-management/account-id"
+}
+
+# Get current organization ID for trust policy validation
+data "aws_organizations_organization" "current" {}
+
+locals {
+  # Automation account ID from AFT SSM parameter
+  automation_account_id = data.aws_ssm_parameter.aft_management_account_id.value
+  
+  # Current organization ID for aws:PrincipalOrgID condition
+  organization_id = data.aws_organizations_organization.current.id
+  
+  # Common deployment role configuration
+  deployment_role_config = {
+    max_session_duration = 7200 # 2 hours
+    managed_policy_arn   = "arn:aws:iam::aws:policy/AdministratorAccess"
+    boundary_policy_name = "Boundary-Default"
+  }
+}
+
+# Platform Deployment Role
+# Assumed by org-automation-broker-role from automation account
+# Used for privileged infrastructure and governance deployments
+resource "aws_iam_role" "org_default_deployment" {
+  name                 = "${var.protected_role_prefix}-default-deployment-role"
+  description          = "Platform deployment role for AFT automation account via org-automation-broker-role"
+  max_session_duration = local.deployment_role_config.max_session_duration
+  permissions_boundary = aws_iam_policy.boundaries[local.deployment_role_config.boundary_policy_name].arn
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${local.automation_account_id}:role/${var.protected_role_prefix}-automation-broker-role"
+        }
+        Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "aws:PrincipalOrgID" = local.organization_id
+          }
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    local.common_tags,
+    local.deployment_role_tags,
+    {
+      RoleType        = "PlatformDeployment"
+      TrustedBroker   = "${var.protected_role_prefix}-automation-broker-role"
+      DeploymentScope = "Platform"
+    }
+  )
+}
+
+# Attach AdministratorAccess to platform deployment role
+resource "aws_iam_role_policy_attachment" "org_default_deployment_admin" {
+  role       = aws_iam_role.org_default_deployment.name
+  policy_arn = local.deployment_role_config.managed_policy_arn
+}
+
+# Application Deployment Role
+# Assumed by application-automation-broker-role-${accountid} from automation account
+# Used for application workload deployments
+resource "aws_iam_role" "application_default_deployment" {
+  name                 = "application-default-deployment-role"
+  description          = "Application deployment role for AFT automation account via application-automation-broker-role"
+  max_session_duration = local.deployment_role_config.max_session_duration
+  permissions_boundary = aws_iam_policy.boundaries[local.deployment_role_config.boundary_policy_name].arn
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${local.automation_account_id}:role/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
+        }
+        Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "aws:PrincipalOrgID" = local.organization_id
+          }
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    local.common_tags,
+    local.deployment_role_tags,
+    {
+      RoleType        = "ApplicationDeployment"
+      TrustedBroker   = "application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
+      DeploymentScope = "Application"
+    }
+  )
+}
+
+# Attach AdministratorAccess to application deployment role
+resource "aws_iam_role_policy_attachment" "application_default_deployment_admin" {
+  role       = aws_iam_role.application_default_deployment.name
+  policy_arn = local.deployment_role_config.managed_policy_arn
+}

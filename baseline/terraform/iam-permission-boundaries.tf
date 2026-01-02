@@ -39,11 +39,11 @@ resource "aws_iam_policy" "boundaries" {
     )
   )
   
-  tags = {
-    ManagedBy   = "AFT"
-    Purpose     = "PermissionBoundary"
-    Protection  = "PrivilegeEscalationPrevention"
-    AFTCustomization = "Baseline"
-    BoundaryName = each.key
-  }
+  tags = merge(
+    local.common_tags,
+    local.boundary_tags,
+    {
+      BoundaryName = each.key
+    }
+  )
 }
