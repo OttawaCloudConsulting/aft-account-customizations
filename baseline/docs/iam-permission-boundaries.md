@@ -37,6 +37,10 @@
     - [Current Boundaries](#current-boundaries)
     - [Outputs](#outputs)
     - [Variables](#variables)
+  - [External References](#external-references)
+    - [AWS Documentation](#aws-documentation)
+    - [Terraform Documentation](#terraform-documentation)
+    - [Related Tools](#related-tools)
 
 ---
 
@@ -57,14 +61,14 @@ The IAM Permission Boundaries implementation provides a scalable, maintainable s
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ Layer 1: Service Control Policy (Organization-wide)     │
+│ Layer 1: Service Control Policy (Organization-wide)      │
 │ Requires: Boundary-* attachment on all IAM roles         │
 │ Exception: org-* roles (privileged namespace)            │
 └──────────────────────────────────────────────────────────┘
                             ↓
 ┌──────────────────────────────────────────────────────────┐
-│ Layer 2: Permission Boundaries (Account-level)          │
-│ All Boundary-* policies DENY:                           │
+│ Layer 2: Permission Boundaries (Account-level)           │
+│ All Boundary-* policies DENY:                            │
 │  - Creating org-* roles                                  │
 │  - Modifying org-* roles                                 │
 │  - Creating/modifying Boundary-* policies                │
@@ -88,8 +92,10 @@ The IAM Permission Boundaries implementation provides a scalable, maintainable s
 Permission boundaries set the **maximum permissions** an IAM entity can have. AWS evaluates permissions as:
 
 ```
-Effective Permissions = (Identity-based Policy) AND (Permission Boundary)
+Effective Permissions = (Identity-based Policy) AND (Permission Boundary) AND Session Policy
 ```
+
+![Evaluation of a session policy, permissions boundary, and identity-based policy](https://docs.aws.amazon.com/images/IAM/latest/UserGuide/images/EffectivePermissions-session-boundary-id.png)
 
 **Example:**
 
@@ -436,6 +442,8 @@ baseline/terraform/
 │   ├── Boundary-Default.json       # Deny-by-exception pattern
 │   └── Boundary-ReadOnly.json      # Allow-only pattern
 ├── iam-permission-boundaries.tf    # Main Terraform resource
+├── iam-deployment-roles.tf         # Deployment roles resource
+├── locals.tf                       # Common tags and configuration
 ├── variables.tf                    # Configuration variables
 ├── outputs.tf                      # Output values
 └── data.tf                         # Data sources
@@ -476,15 +484,61 @@ resource "aws_iam_policy" "boundaries" {
   # Step 4: Inject variables into template
   policy = templatefile(
     "${path.module}/boundary-policies/${each.value}",
+    merge(
+      local.template_vars,
+      {
+        boundary_name = each.key
+      }
+    )
+  )
+  
+  # Step 5: Apply standardized tags
+  tags = merge(
+    local.common_tags,          # ManagedBy, AFTCustomization
+    local.boundary_tags,        # Purpose, Protection
     {
-      account_id              = data.aws_caller_identity.current.account_id,
-      protected_role_prefix   = var.protected_role_prefix,
-      boundary_policy_prefix  = var.boundary_policy_prefix,
-      boundary_name           = each.key
+      BoundaryName = each.key   # Boundary-specific identifier
     }
   )
 }
 ```
+
+### Tag Management
+
+**Externalized Tags** (defined in `locals.tf`):
+
+```hcl
+locals {
+  # Common tags applied to all resources in this baseline
+  common_tags = {
+    ManagedBy        = "AFT"
+    AFTCustomization = "Baseline"
+  }
+  
+  # Tags specific to IAM Permission Boundaries
+  boundary_tags = {
+    Purpose    = "PermissionBoundary"
+    Protection = "PrivilegeEscalationPrevention"
+  }
+}
+```
+
+**Tag Merging Pattern:**
+
+```hcl
+tags = merge(
+  local.common_tags,      # Standard across all baseline resources
+  local.boundary_tags,    # Specific to permission boundaries
+  {
+    BoundaryName = each.key  # Resource-specific tags
+  }
+)
+```
+
+This pattern ensures:
+- Consistent tagging across all baseline resources
+- Easy updates to common tags in one place
+- Clear separation between common, resource-type, and resource-specific tags
 
 ### Key Terraform Resources
 
