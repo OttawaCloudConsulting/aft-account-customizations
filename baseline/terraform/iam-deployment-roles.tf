@@ -35,12 +35,13 @@ resource "aws_iam_role" "org_default_deployment" {
       {
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::${local.automation_account_id}:role/${var.protected_role_prefix}-automation-broker-role"
+          AWS = "arn:aws:iam::${local.automation_account_id}:root"
         }
         Action = "sts:AssumeRole"
         Condition = {
           StringEquals = {
             "aws:PrincipalOrgID" = local.organization_id
+            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/${var.protected_role_prefix}-automation-broker-role"
           }
         }
       }
@@ -79,12 +80,13 @@ resource "aws_iam_role" "application_default_deployment" {
       {
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::${local.automation_account_id}:role/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
+          AWS = "arn:aws:iam::${local.automation_account_id}:root"
         }
         Action = "sts:AssumeRole"
         Condition = {
           StringEquals = {
             "aws:PrincipalOrgID" = local.organization_id
+            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
           }
         }
       }

@@ -83,21 +83,36 @@ AFT Automation Account
 
 ### Trust Policy Design
 
-**Organization Validation Pattern:**
+**Dual-Condition Validation Pattern:**
+
+The trust policies use a combination of organization validation and specific role ARN matching to ensure secure, flexible cross-account access:
 
 ```hcl
+Principal = {
+  AWS = "arn:aws:iam::${automation_account_id}:root"
+}
 Condition = {
   StringEquals = {
     "aws:PrincipalOrgID" = organization_id
+    "aws:PrincipalArn"   = "arn:aws:iam::${automation_account_id}:role/org-automation-broker-role"
   }
 }
 ```
+
+**Why Use Root Principal with PrincipalArn Condition?**
+
+1. **Decoupled Creation Order**: Roles can be created even if broker roles don't exist yet
+2. **Runtime Validation**: AWS validates the specific role ARN at assume-role time, not at role creation
+3. **Organization Boundary**: Still enforces organization membership via `PrincipalOrgID`
+4. **Specific Role Restriction**: Only the exact broker role can assume, not any role in the account
 
 **Benefits:**
 
 - Prevents cross-organization role assumption
 - Works with AWS Organizations moving accounts
 - No hardcoded account ID lists to maintain
+- Allows flexible deployment ordering (target account roles before automation broker roles)
+- Combines account-level trust with role-specific restrictions
 - Leverages AWS Organizations as authority
 
 **Role Naming Convention:**
