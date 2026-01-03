@@ -2,18 +2,12 @@
 # Platform and application deployment roles for automation account
 # Trusted by AFT automation account via broker roles with Organization validation
 
-# Retrieve AFT management (automation) account ID from SSM Parameter Store
-# AFT populates this parameter during initial deployment
-data "aws_ssm_parameter" "aft_management_account_id" {
-  name = "/aft/account/aft-management/account-id"
-}
-
 # Get current organization ID for trust policy validation
 data "aws_organizations_organization" "current" {}
 
 locals {
-  # Automation account ID from AFT SSM parameter
-  automation_account_id = data.aws_ssm_parameter.aft_management_account_id.value
+  # Automation account ID is extracted from aft_admin_role_arn in locals-aft.tf (generated from Jinja template)
+  automation_account_id = local.aft_management_account_id
   
   # Current organization ID for aws:PrincipalOrgID condition
   organization_id = data.aws_organizations_organization.current.id

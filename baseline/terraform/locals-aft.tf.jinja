@@ -1,0 +1,8 @@
+# Auto-generated file - extracts AFT account ID from the admin role ARN
+# This file is generated from locals-aft.tf.jinja during the build process
+
+locals {
+  # Extract AFT management account ID from the aft_admin_role_arn
+  # ARN format: arn:aws:iam::ACCOUNT_ID:role/role-name
+  aft_management_account_id = split(":", "{{ aft_admin_role_arn }}")[4]
+}
