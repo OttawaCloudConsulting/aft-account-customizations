@@ -9,7 +9,7 @@
         "iam:PutRolePolicy",
         "iam:AttachRolePolicy"
       ],
-      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}"
+      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}-*"
     },
     {
       "Sid": "DenyModifyProtectedRoles",
@@ -26,7 +26,7 @@
         "iam:PutRolePermissionsBoundary",
         "iam:DeleteRolePermissionsBoundary"
       ],
-      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}"
+      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}-*"
     },
     {
       "Sid": "DenyCreatePermissionBoundaryPolicies",
@@ -34,7 +34,7 @@
       "Action": [
         "iam:CreatePolicy"
       ],
-      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}"
+      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}-*"
     },
     {
       "Sid": "DenyModifyAnyBoundaryPolicy",
@@ -45,7 +45,7 @@
         "iam:DeletePolicyVersion",
         "iam:SetDefaultPolicyVersion"
       ],
-      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}"
+      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}-*"
     },
     {
       "Sid": "DenyRemovingBoundaries",

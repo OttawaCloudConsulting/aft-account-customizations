@@ -1,13 +1,13 @@
 variable "protected_role_prefix" {
-  description = "IAM role prefix protected from creation/modification (e.g., org-*)"
+  description = "IAM role prefix protected from creation/modification (e.g., org)"
   type        = string
-  default     = "org-*"
+  default     = "org"
 }
 
 variable "boundary_policy_prefix" {
-  description = "Prefix for permission boundary policies (e.g., Boundary-*)"
+  description = "Prefix for permission boundary policies (e.g., Boundary)"
   type        = string
-  default     = "Boundary-*"
+  default     = "Boundary"
 }
 
 
