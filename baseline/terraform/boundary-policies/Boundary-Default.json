@@ -2,6 +2,16 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "AllowOrganizationVisibility",
+      "Effect": "Allow",
+      "Action": [
+        "organizations:DescribeOrganization",
+        "organizations:ListAccounts",
+        "organizations:ListAccountsForParent"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "DenyCreateProtectedRoles",
       "Effect": "Deny",
       "Action": [
@@ -9,7 +19,7 @@
         "iam:PutRolePolicy",
         "iam:AttachRolePolicy"
       ],
-      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}-*"
+      "Resource": "arn:aws:iam::${account_id}:role/org/${protected_role_prefix}-*"
     },
     {
       "Sid": "DenyModifyProtectedRoles",
@@ -26,7 +36,7 @@
         "iam:PutRolePermissionsBoundary",
         "iam:DeleteRolePermissionsBoundary"
       ],
-      "Resource": "arn:aws:iam::${account_id}:role/${protected_role_prefix}-*"
+      "Resource": "arn:aws:iam::${account_id}:role/org/${protected_role_prefix}-*"
     },
     {
       "Sid": "DenyCreatePermissionBoundaryPolicies",
@@ -34,7 +44,7 @@
       "Action": [
         "iam:CreatePolicy"
       ],
-      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}-*"
+      "Resource": "arn:aws:iam::${account_id}:policy/org/${boundary_policy_prefix}-*"
     },
     {
       "Sid": "DenyModifyAnyBoundaryPolicy",
@@ -45,7 +55,7 @@
         "iam:DeletePolicyVersion",
         "iam:SetDefaultPolicyVersion"
       ],
-      "Resource": "arn:aws:iam::${account_id}:policy/${boundary_policy_prefix}-*"
+      "Resource": "arn:aws:iam::${account_id}:policy/org/${boundary_policy_prefix}-*"
     },
     {
       "Sid": "DenyRemovingBoundaries",
@@ -65,9 +75,89 @@
       "Resource": "arn:aws:iam::${account_id}:role/*",
       "Condition": {
         "StringNotEquals": {
-          "iam:PermissionsBoundary": "arn:aws:iam::${account_id}:policy/${boundary_name}"
+          "iam:PermissionsBoundary": "arn:aws:iam::${account_id}:policy/org/${boundary_name}"
         }
       }
+    },
+    {
+      "Sid": "DenyBillingChanges",
+      "Effect": "Deny",
+      "Action": [
+        "aws-portal:ModifyAccount",
+        "aws-portal:ModifyBilling",
+        "aws-portal:ModifyPaymentMethods"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyMarketplaceSubscriptions",
+      "Effect": "Deny",
+      "Action": [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:Unsubscribe",
+        "aws-marketplace:CreatePrivateMarketplace"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIdentityCenterChanges",
+      "Effect": "Deny",
+      "Action": [
+        "sso:*",
+        "sso-directory:*",
+        "identitystore:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyCloudTrailChanges",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:StopLogging",
+        "cloudtrail:UpdateTrail",
+        "cloudtrail:PutEventSelectors"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyConfigChanges",
+      "Effect": "Deny",
+      "Action": [
+        "config:DeleteConfigurationRecorder",
+        "config:DeleteDeliveryChannel",
+        "config:StopConfigurationRecorder",
+        "config:PutConfigurationRecorder",
+        "config:PutDeliveryChannel"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenySecurityServiceChanges",
+      "Effect": "Deny",
+      "Action": [
+        "guardduty:DeleteDetector",
+        "guardduty:DisassociateFromMasterAccount",
+        "guardduty:StopMonitoringMembers",
+        "securityhub:DisableSecurityHub",
+        "securityhub:DisassociateFromMasterAccount",
+        "access-analyzer:DeleteAnalyzer"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ProtectInfrastructureLogs",
+      "Effect": "Deny",
+      "Action": [
+        "logs:DeleteLogGroup",
+        "logs:DeleteLogStream",
+        "logs:PutRetentionPolicy"
+      ],
+      "Resource": [
+        "arn:aws:logs:*:${account_id}:log-group:/aws/lambda/aft-*",
+        "arn:aws:logs:*:${account_id}:log-group:/aws/codebuild/aft-*",
+        "arn:aws:logs:*:${account_id}:log-group:${protected_role_prefix}*"
+      ]
     }
   ]
 }

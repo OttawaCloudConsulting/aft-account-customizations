@@ -2,7 +2,7 @@
 
 **Module Component**: Baseline Account Customizations  
 **Purpose**: Prevent privilege escalation through comprehensive IAM permission boundaries  
-**Last Updated**: January 2, 2026
+**Last Updated**: January 3, 2026
 
 ---
 
@@ -73,11 +73,16 @@ The IAM Permission Boundaries implementation provides a scalable, maintainable s
 │  - Modifying org-* roles                                 │
 │  - Creating/modifying Boundary-* policies                │
 │  - Removing permission boundaries                        │
+│  - Billing/payment modifications                         │
+│  - Security service tampering (CloudTrail, Config, etc.) │
+│  - Identity Center/SSO changes                           │
+│  - Marketplace subscriptions                             │
 └──────────────────────────────────────────────────────────┘
                             ↓
 ┌──────────────────────────────────────────────────────────┐
 │ Result: Workload IAM Roles                               │
 │ Can perform work, but cannot escalate privileges         │
+│ Cannot tamper with security/audit infrastructure         │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -86,6 +91,37 @@ The IAM Permission Boundaries implementation provides a scalable, maintainable s
 - **SCP alone**: Could be bypassed by creating custom permissive boundaries
 - **Boundaries alone**: Could be bypassed by creating roles without boundaries
 - **Together**: Closes all privilege escalation paths
+
+### Security Controls in Boundary-Default
+
+The `Boundary-Default` policy implements comprehensive security controls beyond just IAM protection:
+
+#### **IAM Protection (Privilege Escalation Prevention)**
+- ✅ Deny creation of `org-*` protected roles
+- ✅ Deny modification of `org-*` protected roles
+- ✅ Deny creation/modification of `Boundary-*` policies
+- ✅ Deny removal of permission boundaries from any role
+- ✅ Require boundary on all new role creation
+
+#### **Audit & Compliance Protection**
+- ✅ **CloudTrail**: Prevent disabling, deletion, or modification of audit trails
+- ✅ **Config**: Prevent deletion or stopping of configuration recorders
+- ✅ **Infrastructure Logs**: Protect AFT and org-prefixed CloudWatch log groups from deletion
+
+#### **Security Service Protection**
+- ✅ **GuardDuty**: Prevent detector deletion or disassociation
+- ✅ **Security Hub**: Prevent disabling or disassociation
+- ✅ **Access Analyzer**: Prevent analyzer deletion
+
+#### **Identity & Access Protection**
+- ✅ **SSO/Identity Center**: Block all SSO, SSO-Directory, and IdentityStore modifications
+- ✅ **Organization Visibility**: Allow read-only access to org structure (DescribeOrganization, ListAccounts)
+
+#### **Cost Control**
+- ✅ **Billing**: Prevent modifications to account, billing settings, and payment methods
+- ✅ **Marketplace**: Block marketplace subscriptions/unsubscriptions
+
+These controls create a **defense-in-depth** security posture where even roles with AdministratorAccess cannot tamper with core security, audit, or identity infrastructure.
 
 ### How Permission Boundaries Work
 
@@ -171,17 +207,26 @@ Result:          Can only use S3, EC2, Lambda
 
 ### Protected Namespaces
 
+**`/org/` Path**: Infrastructure and governance resources
+
+- All boundary policies deployed to `/org/` path
+- All deployment roles deployed to `/org/` path
+- Makes it easy to identify and protect organizational infrastructure
+- Clear separation between org-managed and workload resources
+
 **`org-*` Roles**: Privileged roles exempt from boundary requirements
 
 - Created only by core deployment mechanisms
 - Have special SCP exceptions
 - Cannot be created/modified by bounded roles
+- ARN pattern: `arn:aws:iam::ACCOUNT:role/org/org-*`
 
 **`Boundary-*` Policies**: Permission boundary policies
 
 - Cannot be created by bounded roles
 - Cannot be modified by bounded roles
 - Self-protecting governance controls
+- ARN pattern: `arn:aws:iam::ACCOUNT:policy/org/Boundary-*`
 
 ---
 

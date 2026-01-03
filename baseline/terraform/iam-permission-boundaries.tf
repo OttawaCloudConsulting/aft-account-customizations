@@ -25,7 +25,8 @@ locals {
 resource "aws_iam_policy" "boundaries" {
   for_each = local.boundary_policies
   
-  name        = each.key
+  name        = "${var.boundary_policy_prefix}-${each.key}"
+  path        = "/org/"
   description = "Permission boundary preventing privilege escalation to ${var.protected_role_prefix} roles"
   
   policy = templatefile(

@@ -25,6 +25,7 @@ locals {
 # Used for privileged infrastructure and governance deployments
 resource "aws_iam_role" "org_default_deployment" {
   name                 = "${var.protected_role_prefix}-default-deployment-role"
+  path                 = "/org/"
   description          = "Platform deployment role for AFT automation account via org-automation-broker-role"
   max_session_duration = local.deployment_role_config.max_session_duration
   permissions_boundary = aws_iam_policy.boundaries[local.deployment_role_config.boundary_policy_name].arn
@@ -41,7 +42,7 @@ resource "aws_iam_role" "org_default_deployment" {
         Condition = {
           StringEquals = {
             "aws:PrincipalOrgID" = local.organization_id
-            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/${var.protected_role_prefix}-automation-broker-role"
+            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/org/${var.protected_role_prefix}-automation-broker-role"
           }
         }
       }
@@ -70,6 +71,7 @@ resource "aws_iam_role_policy_attachment" "org_default_deployment_admin" {
 # Used for application workload deployments
 resource "aws_iam_role" "application_default_deployment" {
   name                 = "application-default-deployment-role"
+  path                 = "/org/"
   description          = "Application deployment role for AFT automation account via application-automation-broker-role"
   max_session_duration = local.deployment_role_config.max_session_duration
   permissions_boundary = aws_iam_policy.boundaries[local.deployment_role_config.boundary_policy_name].arn
@@ -86,7 +88,7 @@ resource "aws_iam_role" "application_default_deployment" {
         Condition = {
           StringEquals = {
             "aws:PrincipalOrgID" = local.organization_id
-            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
+            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/org/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
           }
         }
       }
