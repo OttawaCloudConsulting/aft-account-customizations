@@ -20,34 +20,16 @@ cdk --version
 
 # Debug
 node --version
-echo "######## get environment variables ########"
-env
-
-echo "######## get aws values ########"
-aws sts get-caller-identity
-aws ssm describe-parameters | jq '.Parameters[].Name'
-echo "#########################################"
-
-
-
-# Get AFT automation account ID from SSM Parameter Store
-AUTOMATION_ACCOUNT_ID=$(aws ssm get-parameter \
-  --name "/aft/account/aft-management/account-id" \
-  --query "Parameter.Value" \
-  --output text)
 
 # Get current account ID and region
-ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
-REGION=$(aws ec2 describe-availability-zones --query "AvailabilityZones[0].RegionName" --output text)
-
-echo "Automation Account: ${AUTOMATION_ACCOUNT_ID}"
+echo "Automation Account: ${AFT_MGMT_ACCOUNT}"
 echo "Target Account: ${ACCOUNT_ID}"
-echo "Region: ${REGION}"
+echo "Region: ${AWS_DEFAULT_REGION}"
 
 # Bootstrap CDK with trust to AFT automation account
 cdk bootstrap \
-  --trust "${AUTOMATION_ACCOUNT_ID}" \
+  --trust "${AFT_MGMT_ACCOUNT}" \
   --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess \
-  "aws://${ACCOUNT_ID}/${REGION}"
+  "aws://${VENDED_ACCOUNT_ID}/${AWS_DEFAULT_REGION}"
 
 echo "CDK bootstrap completed successfully"
