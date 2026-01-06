@@ -5,6 +5,8 @@
 # Bootstrap AWS CDK for newly vended accounts
 # Configures CDK with trust to AFT automation account
 
+set -x
+
 echo "Bootstrapping AWS CDK..."
 
 # Check if CDK CLI is installed
@@ -15,6 +17,18 @@ fi
 
 # Verify CDK version
 cdk --version
+
+# Debug
+node --version
+echo "######## get environment variables ########"
+env
+
+echo "######## get aws values ########"
+aws sts get-caller-identity
+aws ssm describe-parameters --profile aft-automation --region ca-central-1 | jq '.Parameters[].Name'
+echo "#########################################"
+
+
 
 # Get AFT automation account ID from SSM Parameter Store
 AUTOMATION_ACCOUNT_ID=$(aws ssm get-parameter \
