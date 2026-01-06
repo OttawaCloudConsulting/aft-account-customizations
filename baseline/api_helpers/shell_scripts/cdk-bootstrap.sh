@@ -25,7 +25,7 @@ env
 
 echo "######## get aws values ########"
 aws sts get-caller-identity
-aws ssm describe-parameters --profile aft-automation --region ca-central-1 | jq '.Parameters[].Name'
+aws ssm describe-parameters | jq '.Parameters[].Name'
 echo "#########################################"
 
 
