@@ -23,7 +23,7 @@ node --version
 
 # Get current account ID and region
 echo "Automation Account: ${AFT_MGMT_ACCOUNT}"
-echo "Target Account: ${ACCOUNT_ID}"
+echo "Target Account: ${VENDED_ACCOUNT_ID}"
 echo "Region: ${AWS_DEFAULT_REGION}"
 
 # Bootstrap CDK with trust to AFT automation account
