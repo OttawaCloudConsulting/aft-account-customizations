@@ -4,92 +4,77 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AFT account customizations for the OCC AWS Control Tower Landing Zone. This repo defines Terraform and shell-based customizations that are applied to AWS accounts after they are vended by Account Factory for Terraform (AFT). Customizations execute in CodeBuild pipelines triggered by the AFT orchestration framework.
+AFT (Account Factory for Terraform) account customizations for AWS Control Tower. Applies IAM security governance (permission boundaries, deployment roles) to newly vended AWS accounts. Runs via AWS CodeBuild pipeline triggered by AFT.
 
-Part of a larger monorepo; see the parent `CLAUDE.md` for full architecture context.
+## Architecture
 
-## Customization Tiers
+### Customization Types
 
-Three tiers applied in order during account vending:
+- **baseline/** — Applied to every vended account (primary working area)
+- **core/** — Core/infrastructure accounts only (minimal config)
+- **workload/** — Application/workload accounts only (minimal config)
 
-1. **baseline/** — Applied to EVERY vended account. Currently implements permission boundaries, IAM deployment roles, and CDK bootstrap.
-2. **core/** — Applied to core/infrastructure accounts only. Skeleton structure ready for core-specific Terraform.
-3. **workload/** — Applied to workload/application accounts only. Skeleton structure ready for workload-specific Terraform.
+Each customization has: `terraform/` (IaC), `api_helpers/` (pre/post shell scripts + python)
 
-The `account_customizations_name` field in the account request (in `aft-account-request/`) determines which tier (core or workload) applies on top of baseline.
+### Execution Flow
 
-## Execution Environment
+1. CodeBuild triggers on account vend
+2. `pre-api-helpers.sh` runs (CDK bootstrap)
+3. Jinja2 templates (`.jinja` files) are rendered with env vars
+4. `terraform init && terraform apply`
+5. `post-api-helpers.sh` runs
 
-Customizations run in CodeBuild. The execution flow per tier is:
+### Security Model (Two-Layer Defense)
 
-1. Jinja2 templates (`aft-providers.jinja`, `backend.jinja`, `locals-aft.tf.jinja`) are rendered with account-specific values
-2. `pre-api-helpers.sh` runs (baseline does CDK bootstrap here)
-3. `terraform init && terraform apply` executes
-4. `post-api-helpers.sh` runs
+**Layer 1 — SCP (Organization):** All IAM roles must either use `org-*` prefix OR have a `Boundary-*` permission boundary attached.
 
-Key environment variables available at runtime: `VENDED_ACCOUNT_ID`, `AFT_MGMT_ACCOUNT`, `CUSTOMIZATION` (baseline/core/workload), `CT_MGMT_REGION`. Full list in `README.md`.
+**Layer 2 — Permission Boundaries (Account):** All `Boundary-*` policies deny privilege escalation (creating `org-*` roles, modifying boundaries, billing changes, security service tampering).
 
-## Common Commands
+### Key Design Patterns
+
+- **Dynamic policy discovery:** Drop a `.json` file in `baseline/terraform/boundary-policies/` — Terraform auto-discovers it via `fileset()` and creates the IAM policy as `Boundary-<filename>`. No code changes needed. Do NOT include the `Boundary-` prefix in the filename.
+- **Template variable injection:** Boundary JSON policies use `${account_id}`, `${protected_role_prefix}`, `${boundary_policy_prefix}`, `${boundary_name}` — rendered by Terraform `templatefile()`.
+- **Prefix vs Pattern distinction:** Variables hold prefixes (e.g., `org`), policies use patterns (e.g., `org-*`). AWS resource names don't allow `*`, but IAM policy resources do.
+- **Cross-account trust:** Deployment roles support two trust patterns — broker role chaining (`org-automation-broker-role`) and direct CodeBuild assumption (`CodeBuild-*-ServiceRole`). Both use `aws:PrincipalOrgID` (org membership) + `aws:PrincipalArn` conditions.
+
+### Important Files
+
+| File | Purpose |
+|------|---------|
+| `baseline/terraform/iam-permission-boundaries.tf` | Dynamic boundary creation with `for_each` |
+| `baseline/terraform/iam-deployment-roles.tf` | Platform & application deployment roles |
+| `baseline/terraform/boundary-policies/*.json` | Permission boundary policy templates |
+| `baseline/terraform/variables.tf` | `protected_role_prefix` ("org"), `boundary_policy_prefix` ("Boundary") |
+| `baseline/terraform/locals.tf` | Common tags: `ManagedBy: AFT`, `AFTCustomization: Baseline` |
+| `baseline/api_helpers/shell_scripts/cdk-bootstrap.sh` | CDK bootstrap for new accounts |
+
+### Jinja Templates
+
+`aft-providers.jinja`, `backend.jinja`, `locals-aft.tf.jinja` are processed by the AFT CodeBuild pipeline before Terraform runs. They are NOT standard Terraform files.
+
+## Available CodeBuild Environment Variables
+
+Key variables available at runtime: `VENDED_ACCOUNT_ID`, `AFT_MGMT_ACCOUNT`, `AFT_ADMIN_ROLE_ARN`, `VENDED_EXEC_ROLE_ARN`, `CUSTOMIZATION`, `CT_MGMT_REGION`, `TF_VERSION`. Full list in README.md.
+
+## Commands
+
+No local build/test system. Terraform runs in CodeBuild. For local validation:
 
 ```bash
-# Validate baseline Terraform
-cd baseline/terraform && terraform validate
-
-# Validate core/workload (requires Jinja2 templates to be rendered first)
-cd core/terraform && terraform validate
-cd workload/terraform && terraform validate
-
 # Format check
-terraform fmt -check -recursive baseline/terraform/
+terraform -chdir=baseline/terraform fmt -check
 
-# Validate JSON policy templates
-python3 -c "import json; json.load(open('baseline/terraform/boundary-policies/Boundary-Default.json'))"
+# Validate syntax (requires init, which needs AWS credentials)
+terraform -chdir=baseline/terraform validate
+
+# Format all terraform files
+terraform -chdir=baseline/terraform fmt
 ```
 
-There are no local test suites. Customizations are validated by pushing to the repo and observing CodeBuild execution via:
-```bash
-aws logs tail /aft/account-provisioning-framework --follow | jq
-```
+## Agent Protocol
 
-## Architecture: Baseline Security Model
-
-### Two-Layer Defense
-
-1. **SCPs** (Organization level) — Broad guardrails applied by Control Tower
-2. **Permission Boundaries** (Account level) — Fine-grained privilege escalation prevention, implemented here
-
-### Permission Boundaries (`baseline/terraform/iam-permission-boundaries.tf`)
-
-Uses `fileset()` + `for_each` to auto-discover JSON templates in `baseline/terraform/boundary-policies/`. Adding a new boundary is done by dropping a `.json` file in that directory — no Terraform code changes needed.
-
-Template variables injected: `${account_id}`, `${protected_role_prefix}`, `${boundary_policy_prefix}`, `${boundary_name}`.
-
-Current policies:
-- **Boundary-Default** — Deny-by-exception pattern. Blocks privilege escalation to `org-*` roles, boundary policy modification, security service tampering.
-- **Boundary-ReadOnly** — Allow-only pattern. Restrictive read-only access for audit/security roles.
-
-### IAM Deployment Roles (`baseline/terraform/iam-deployment-roles.tf`)
-
-Two cross-account roles created in every vended account:
-
-- **org-default-deployment-role** — Trusted by `org-automation-broker-role` in AFT automation account (`389068787156`). For platform/infrastructure deployments.
-- **application-default-deployment-role** — Trusted by `application-automation-broker-role-{account_id}` in AFT automation account. For application workload deployments.
-
-Both have AdministratorAccess bounded by Boundary-Default. Trust policies require `aws:PrincipalOrgID` match.
-
-### Protected Namespaces
-
-- `org-*` roles — Privileged, exempt from boundary requirements
-- `Boundary-*` policies — Self-protecting permission boundaries
-- All other roles — Must have a `Boundary-*` policy attached
-
-## Key Conventions
-
-- **Jinja2 templates** (`.jinja` files) are processed by AFT before Terraform runs. Do not rename or relocate them.
-- **`api_helpers/`** directories contain pre/post hooks. `pre-api-helpers.sh` runs before Terraform; `post-api-helpers.sh` runs after.
-- **`agents/`** directory is git-ignored. Contains AI agent protocol, design documents, and session memory. Not deployed.
-- **JSON output must be piped to `jq`** to prevent terminal hangs.
-- **`git add .` is forbidden.** Stage files individually.
-- **Refer to the user as Q.** Follow the DOING/EXPECT/RESULT reasoning protocol from `agents/CLAUDE.md` before actions that could fail.
-- **On failure, STOP.** Output reasoning to Q before taking further action.
-- **Persist agent memory** in `agents/memory/` for cross-session continuity.
+See `agents/CLAUDE.md` for defensive coding protocol. Key rules:
+- Pipe JSON-outputting commands through `jq`
+- Use `git add <file>` individually, never `git add .`
+- Session memory persists in `agents/memory/` as markdown files
+- When something fails: stop, report to user, wait for confirmation before retrying

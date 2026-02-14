@@ -2,7 +2,7 @@
 
 **Module Component**: Baseline Account Customizations  
 **Purpose**: Prevent privilege escalation through comprehensive IAM permission boundaries  
-**Last Updated**: January 3, 2026
+**Last Updated**: February 13, 2026
 
 ---
 
@@ -115,7 +115,6 @@ The `Boundary-Default` policy implements comprehensive security controls beyond 
 
 #### **Identity & Access Protection**
 - ✅ **SSO/Identity Center**: Block all SSO, SSO-Directory, and IdentityStore modifications
-- ✅ **Organization Visibility**: Allow read-only access to org structure (DescribeOrganization, ListAccounts)
 
 #### **Cost Control**
 - ✅ **Billing**: Prevent modifications to account, billing settings, and payment methods
@@ -153,11 +152,12 @@ Result:          Can only use S3, EC2, Lambda
 
 **Use Case**: Works with broad identity policies (e.g., AdministratorAccess)
 
-**Structure**: Only Deny statements, no Allow statements
+**Structure**: Broad Allow (`*:*`) plus targeted Deny statements
 
 ```json
 {
   "Statement": [
+    {"Sid": "AllowAllServices", "Effect": "Allow", "Action": "*", "Resource": "*"},
     {"Effect": "Deny", "Action": "iam:CreateRole", "Resource": "org-*"},
     {"Effect": "Deny", "Action": "iam:DeleteRolePermissionsBoundary"}
   ]
@@ -166,8 +166,8 @@ Result:          Can only use S3, EC2, Lambda
 
 **Logic**:
 
-- Identity policy grants everything
-- Boundary denies specific dangerous actions
+- Boundary allows all actions broadly
+- Deny statements block specific dangerous actions
 - Result: Administrator MINUS protected operations
 
 **When to Use**:
@@ -247,13 +247,14 @@ Create a new JSON file in `baseline/terraform/boundary-policies/`:
 
 ```bash
 cd baseline/terraform/boundary-policies/
-touch Boundary-DataScience.json
+touch DataScience.json
 ```
 
-**File naming convention**: `Boundary-<Name>.json`
+**File naming convention**: `<Name>.json`
 
-- The filename (without `.json`) becomes the IAM policy name
-- Must start with `Boundary-` prefix
+- The filename (without `.json`) is combined with the `boundary_policy_prefix` variable to form the IAM policy name
+- Example: `DataScience.json` → IAM policy `Boundary-DataScience`
+- Do NOT include the `Boundary-` prefix in the filename (it's added automatically)
 - Use PascalCase for readability
 
 **Step 2: Define Your Policy**
@@ -394,7 +395,7 @@ Your policy JSON can use these template variables:
 | `${account_id}` | AWS Account ID where boundary is deployed | `123456789012` |
 | `${protected_role_prefix}` | Protected role prefix pattern | `org-*` |
 | `${boundary_policy_prefix}` | Boundary policy prefix pattern | `Boundary-*` |
-| `${boundary_name}` | Name of THIS specific boundary | `Boundary-DataScience` |
+| `${boundary_name}` | Name of THIS specific boundary (filename without `.json`) | `DataScience` |
 
 **Usage Example:**
 
@@ -431,7 +432,7 @@ terraform plan
 Look for your new boundary in the plan output:
 
 ```
-# aws_iam_policy.boundaries["Boundary-DataScience"] will be created
+# aws_iam_policy.boundaries["DataScience"] will be created
 ```
 
 **Step 3: Test Policy Logic**
@@ -441,7 +442,7 @@ Use AWS IAM Policy Simulator or create a test account:
 ```bash
 # After applying to a test account
 aws iam simulate-custom-policy \
-  --policy-input-list file://boundary-policies/Boundary-DataScience.json \
+  --policy-input-list file://boundary-policies/DataScience.json \
   --action-names iam:CreateRole \
   --resource-arns "arn:aws:iam::123456789012:role/org-test-role"
 ```
@@ -484,8 +485,8 @@ terraform output boundary_policy_arns
 ```
 baseline/terraform/
 ├── boundary-policies/              # Policy template directory
-│   ├── Boundary-Default.json       # Deny-by-exception pattern
-│   └── Boundary-ReadOnly.json      # Allow-only pattern
+│   ├── Default.json                # Deny-by-exception pattern
+│   └── ReadOnly.json               # Allow-only pattern
 ├── iam-permission-boundaries.tf    # Main Terraform resource
 ├── iam-deployment-roles.tf         # Deployment roles resource
 ├── locals.tf                       # Common tags and configuration
@@ -524,7 +525,7 @@ locals {
 resource "aws_iam_policy" "boundaries" {
   for_each = local.boundary_policies  # Iterate over discovered files
   
-  name = each.key  # Policy name = filename without .json
+  name = "${var.boundary_policy_prefix}-${each.key}"  # e.g., "Boundary-Default"
   
   # Step 4: Inject variables into template
   policy = templatefile(
@@ -591,19 +592,19 @@ This pattern ensures:
 
 - Type: Set of strings
 - Purpose: List of all `.json` files in boundary-policies/
-- Example: `["Boundary-Default.json", "Boundary-ReadOnly.json"]`
+- Example: `["Default.json", "ReadOnly.json"]`
 
 **`locals.boundary_policies`**
 
 - Type: Map of string to string
 - Purpose: Maps policy name to filename
-- Example: `{ "Boundary-Default" = "Boundary-Default.json" }`
+- Example: `{ "Default" = "Default.json", "ReadOnly" = "ReadOnly.json" }`
 
 **`aws_iam_policy.boundaries`**
 
 - Type: Map of IAM policy resources
 - Purpose: Creates one policy per discovered file
-- Access: `aws_iam_policy.boundaries["Boundary-Default"]`
+- Access: `aws_iam_policy.boundaries["Default"]`
 
 ### Template Variable Injection
 
@@ -611,12 +612,12 @@ This pattern ensures:
 
 ```hcl
 policy = templatefile(
-  "boundary-policies/Boundary-Default.json",
+  "boundary-policies/Default.json",
   {
-    account_id              = "123456789012",
-    protected_role_prefix   = "org-*",
-    boundary_policy_prefix  = "Boundary-*",
-    boundary_name           = "Boundary-Default"
+    account_id             = "123456789012",
+    protected_role_prefix  = "org",
+    boundary_policy_prefix = "Boundary",
+    boundary_name          = "Default"
   }
 )
 ```
@@ -732,7 +733,7 @@ policy = templatefile(
 ls -la baseline/terraform/boundary-policies/
 
 # Verify filename pattern
-# Must be: Boundary-*.json
+# Must be: <Name>.json (without Boundary- prefix)
 ```
 
 **Issue: Template variable not substituting**
@@ -801,8 +802,8 @@ terraform console
 
   ```hcl
   {
-    "Boundary-Default" = "arn:aws:iam::123456789012:policy/Boundary-Default"
-    "Boundary-ReadOnly" = "arn:aws:iam::123456789012:policy/Boundary-ReadOnly"
+    "Default"  = "arn:aws:iam::123456789012:policy/org/Boundary-Default"
+    "ReadOnly" = "arn:aws:iam::123456789012:policy/org/Boundary-ReadOnly"
   }
   ```
 
@@ -810,13 +811,13 @@ terraform console
 
 - Type: List of strings
 - Description: List of all boundary policy names
-- Example: `["Boundary-Default", "Boundary-ReadOnly"]`
+- Example: `["Default", "ReadOnly"]`
 
 **`boundary_policy_ids`**
 
 - Type: Map of string to string
 - Description: Map of boundary names to their policy IDs
-- Example: `{"Boundary-Default" = "ANPAI23HZ27SI6FQMGNQ2"}`
+- Example: `{"Default" = "ANPAI23HZ27SI6FQMGNQ2"}`
 
 **`account_id`**
 
@@ -829,16 +830,16 @@ terraform console
 **`protected_role_prefix`**
 
 - Type: `string`
-- Default: `"org-*"`
+- Default: `"org"`
 - Description: IAM role prefix protected from creation/modification
-- Used in: Policy templates to define protected namespace
+- Used in: Policy templates to define protected namespace (appended with `-*` in policy patterns)
 
 **`boundary_policy_prefix`**
 
 - Type: `string`
-- Default: `"Boundary-*"`
+- Default: `"Boundary"`
 - Description: Prefix for permission boundary policies
-- Used in: Policy templates to protect boundary policies themselves
+- Used in: IAM policy naming (`${prefix}-${filename}`) and policy templates to protect boundary policies themselves
 
 ---
 

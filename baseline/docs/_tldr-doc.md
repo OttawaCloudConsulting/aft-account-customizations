@@ -49,7 +49,7 @@ No privilege escalation possible
 
 **Adding a New Boundary**:
 
-1. Drop `Boundary-YourName.json` file in `boundary-policies/` directory
+1. Drop `YourName.json` file in `boundary-policies/` directory (prefix added automatically)
 2. Include governance protection statements (see full docs)
 3. Terraform automatically discovers and creates it
 4. No code changes needed
@@ -87,17 +87,16 @@ boundary_tags        # Purpose, Protection
 
 | Role Name | Trusted By | Boundary | Purpose |
 |-----------|-----------|----------|---------|
-| **org-default-deployment-role** | `org-automation-broker-role` | Boundary-Default | Platform infrastructure |
-| **application-default-deployment-role** | `application-automation-broker-role-{account-id}` | Boundary-Default | Application workloads |
+| **org-default-deployment-role** | `org-automation-broker-role`, `CodeBuild-*-ServiceRole` | Boundary-Default | Platform infrastructure |
+| **application-default-deployment-role** | `application-automation-broker-role-{account-id}`, `CodeBuild-*-ServiceRole` | Boundary-Default | Application workloads |
 
-**Trust Model**:
+**Trust Model** (two patterns):
 
 ```
-AFT Automation Account
-  ↓ (AssumeRole with PrincipalOrgID check)
-Target Account Role
-  ↓ (AdministratorAccess + Boundary-Default)
-Deploy infrastructure (with boundary restrictions)
+Broker Pattern:    Broker Role → Deployment Role → Deploy infrastructure
+Direct Pattern:    CodeBuild-*-ServiceRole → Deployment Role → Deploy infrastructure
+Both require:      PrincipalOrgID + PrincipalArn match
+Permissions:       AdministratorAccess + Boundary-Default
 ```
 
 **Key Features**:
@@ -105,7 +104,7 @@ Deploy infrastructure (with boundary restrictions)
 - ✅ **Native AFT Integration** - Retrieves automation account ID from SSM: `/aft/account/aft-management/account-id`
 - ✅ **Organization Boundary** - Trust policies require `aws:PrincipalOrgID` match
 - ✅ **Permission Boundaries** - Both roles use `Boundary-Default` to prevent escalation
-- ✅ **Session Limits** - 2-hour maximum session duration
+- ✅ **Session Limits** - 12-hour maximum session duration
 
 **Assuming a Role** (from automation account):
 
@@ -133,7 +132,7 @@ aws sts assume-role \
 - ❌ Create `org-*` roles (protected namespace)
 - ❌ Remove permission boundaries
 - ❌ Modify `Boundary-*` policies
-- ❌ Sessions longer than 2 hours
+- ❌ Sessions longer than 12 hours
 
 **Adding a New Deployment Role**:
 
@@ -174,7 +173,7 @@ deployment_role_tags     # Purpose, Protection
 - Access denied → Check organization ID matches and broker role name
 - Boundary not found → Verify `.json` file in `boundary-policies/` directory
 - SSM parameter error → Running in wrong account or AFT not deployed
-- Session expired → Max 2 hours, re-authenticate
+- Session expired → Max 12 hours, re-authenticate
 
 ---
 
@@ -187,10 +186,14 @@ deployment_role_tags     # Purpose, Protection
 │  │ org-automation-    │    │ application-automation-  │   │
 │  │ broker-role        │    │ broker-role-{account}    │   │
 │  └─────────┬──────────┘    └────────────┬─────────────┘   │
-└────────────┼──────────────────────────────┼─────────────────┘
-             │                              │
-             │ Trust: PrincipalOrgID        │ Trust: PrincipalOrgID
-             ▼                              ▼
+│            │    ┌──────────────────────┐ │                  │
+│            │    │ CodeBuild-*-         │ │                  │
+│            │    │ ServiceRole          │ │                  │
+│            │    └──────────┬───────────┘ │                  │
+└────────────┼───────────────┼─────────────┼─────────────────┘
+             │               │             │
+             │ Broker        │ Direct      │ Broker
+             ▼               ▼             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Target Account (This Baseline)                  │
 │  ┌────────────────────┐    ┌──────────────────────────┐   │
