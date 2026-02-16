@@ -1,0 +1,28 @@
+# Progress: Backport Cross-Account Role Fixes
+# Source: prd.md + ARCHITECTURE_AND_DESIGN.md
+# Spec: docs/ARCHITECTURE_AND_DESIGN.md is the authoritative design reference
+
+## Features
+
+[x] Feature 1: Rename Boundary Policy Files (Fix Double-Prefix)
+    - Rename Boundary-Default.json → Default.json
+    - Rename Boundary-ReadOnly.json → ReadOnly.json
+    - Update boundary_policy_name lookup key in iam-deployment-roles.tf from "Boundary-Default" to "Default"
+    NOTES: Started 2026-02-13. Completed 2026-02-13. terraform fmt also fixed pre-existing formatting in 3 files.
+
+[x] Feature 2: Add CodeBuild Direct Trust to Deployment Roles
+    - Add TrustCodeBuildServiceRoles statement to org-default-deployment-role
+    - Add TrustCodeBuildServiceRoles statement to application-default-deployment-role
+    - Use StringLike with CodeBuild-*-ServiceRole pattern, scoped to automation account + org ID
+    NOTES: Started 2026-02-13. Completed 2026-02-13. Also added Sid labels to existing TrustBrokerRole statements.
+
+[x] Feature 3: Add AllowAllServices to Boundary-Default Policy
+    - Add AllowAllServices (Allow *:*) as first statement in Default.json
+    - Remove redundant AllowOrganizationVisibility statement
+    - Preserve all existing Deny statements unchanged
+    NOTES: Started 2026-02-13. Completed 2026-02-13. Policy size 4232 bytes (under 6144 limit).
+
+[x] Feature 4: Update Max Session Duration
+    - Change max_session_duration from 7200 to 43200 (12 hours)
+    - Update inline comment
+    NOTES: Started 2026-02-13. Completed 2026-02-13.

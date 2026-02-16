@@ -1,0 +1,43 @@
+{
+  "mcpServers": {
+    "awslabs-core-mcp-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "awslabs.core-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "warning"
+      }
+    },
+    "aws-knowledge-mcp": {
+      "type": "http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    },
+    "awslabs-aws-documentation-mcp-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "awslabs.aws-documentation-mcp-server@latest"
+      ],
+      "env": {}
+    },
+    "awslabs-diagram-mcp-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "awslabs.diagram-mcp-server@latest"
+      ],
+      "env": {}
+    },
+    "mermaid-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-mermaid@latest"
+      ],
+      "env": {}
+    }
+  }
+}

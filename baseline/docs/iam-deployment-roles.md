@@ -2,7 +2,7 @@
 
 **Module Component**: Baseline Account Customizations  
 **Purpose**: Platform and application deployment roles for AFT automation account  
-**Last Updated**: January 2, 2026
+**Last Updated**: February 13, 2026
 
 ---
 
@@ -54,24 +54,24 @@ The IAM Deployment Roles implementation provides secure cross-account access fro
 2. **Organization Boundary**: Trust policies enforce organization membership
 3. **Privilege Escalation Prevention**: All roles protected by permission boundaries
 4. **Role Separation**: Platform vs. application deployment concerns
-5. **Session Time Limits**: 2-hour maximum to limit exposure
+5. **Session Time Limits**: 12-hour maximum to support long-running deployments
 
 ### Role Separation Strategy
 
 ```
 AFT Automation Account
 │
-├─ org-automation-broker-role
+├─ org-automation-broker-role (Broker Pattern)
 │  └─> Assumes: org-default-deployment-role (Platform)
-│     ├─ Infrastructure deployments
-│     ├─ Governance configurations
-│     └─ Privileged operations
+│     └─ Infrastructure, governance, privileged operations
 │
-└─ application-automation-broker-role-{account-id}
-   └─> Assumes: application-default-deployment-role (Application)
-      ├─ Application workload deployments
-      ├─ Service configurations
-      └─ Application-scoped operations
+├─ application-automation-broker-role-{account-id} (Broker Pattern)
+│  └─> Assumes: application-default-deployment-role (Application)
+│     └─ Application workload deployments
+│
+└─ CodeBuild-*-ServiceRole (Direct Pattern)
+   └─> Assumes: org-default-deployment-role OR application-default-deployment-role
+      └─ terraform-pipelines module deployments (first-hop, no chaining)
 ```
 
 **Why Separate Roles?**
@@ -83,28 +83,44 @@ AFT Automation Account
 
 ### Trust Policy Design
 
-**Dual-Condition Validation Pattern:**
+**Dual-Pattern Trust Design:**
 
-The trust policies use a combination of organization validation and specific role ARN matching to ensure secure, flexible cross-account access:
+The trust policies support two assumption patterns, both secured by organization validation and specific role ARN matching:
+
+**Pattern 1: Broker Role (role-chaining)**
 
 ```hcl
-Principal = {
-  AWS = "arn:aws:iam::${automation_account_id}:root"
+{
+  Sid = "TrustBrokerRole"
+  Principal = { AWS = "arn:aws:iam::${automation_account_id}:root" }
+  Condition = {
+    StringEquals = {
+      "aws:PrincipalOrgID" = organization_id
+      "aws:PrincipalArn"   = "arn:aws:iam::${automation_account_id}:role/org/org-automation-broker-role"
+    }
+  }
 }
-Condition = {
-  StringEquals = {
-    "aws:PrincipalOrgID" = organization_id
-    "aws:PrincipalArn"   = "arn:aws:iam::${automation_account_id}:role/org-automation-broker-role"
+```
+
+**Pattern 2: CodeBuild Service Roles (direct, first-hop)**
+
+```hcl
+{
+  Sid = "TrustCodeBuildServiceRoles"
+  Principal = { AWS = "arn:aws:iam::${automation_account_id}:root" }
+  Condition = {
+    StringEquals = { "aws:PrincipalOrgID" = organization_id }
+    StringLike   = { "aws:PrincipalArn" = "arn:aws:iam::${automation_account_id}:role/CodeBuild-*-ServiceRole" }
   }
 }
 ```
 
 **Why Use Root Principal with PrincipalArn Condition?**
 
-1. **Decoupled Creation Order**: Roles can be created even if broker roles don't exist yet
+1. **Decoupled Creation Order**: Roles can be created even if broker/CodeBuild roles don't exist yet
 2. **Runtime Validation**: AWS validates the specific role ARN at assume-role time, not at role creation
 3. **Organization Boundary**: Still enforces organization membership via `PrincipalOrgID`
-4. **Specific Role Restriction**: Only the exact broker role can assume, not any role in the account
+4. **Specific Role Restriction**: Only exact broker role or `CodeBuild-*-ServiceRole` pattern can assume
 
 **Benefits:**
 
@@ -112,7 +128,7 @@ Condition = {
 - Works with AWS Organizations moving accounts
 - No hardcoded account ID lists to maintain
 - Allows flexible deployment ordering (target account roles before automation broker roles)
-- Combines account-level trust with role-specific restrictions
+- Supports both broker-chained and direct CodeBuild deployments
 - Leverages AWS Organizations as authority
 
 **Role Naming Convention:**
@@ -164,7 +180,7 @@ TARGET_ACCOUNT_ID="123456789012"
 aws sts assume-role \
   --role-arn "arn:aws:iam::${TARGET_ACCOUNT_ID}:role/org-default-deployment-role" \
   --role-session-name "platform-deployment-$(date +%s)" \
-  --duration-seconds 7200
+  --duration-seconds 43200
 ```
 
 **From Terraform:**
@@ -173,7 +189,7 @@ aws sts assume-role \
 provider "aws" {
   alias  = "target_account"
   region = "us-east-1"
-  
+
   assume_role {
     role_arn     = "arn:aws:iam::${var.target_account_id}:role/org-default-deployment-role"
     session_name = "terraform-platform-deployment"
@@ -201,7 +217,7 @@ TARGET_ACCOUNT_ID="123456789012"
 aws sts assume-role \
   --role-arn "arn:aws:iam::${TARGET_ACCOUNT_ID}:role/application-default-deployment-role" \
   --role-session-name "app-deployment-$(date +%s)" \
-  --duration-seconds 7200
+  --duration-seconds 43200
 ```
 
 **From GitHub Actions:**
@@ -225,23 +241,22 @@ aws sts assume-role \
 
 ### Understanding Session Limits
 
-**Maximum Session Duration: 2 hours (7200 seconds)**
+**Maximum Session Duration: 12 hours (43200 seconds)**
 
 **Implications:**
 
-- Long-running deployments must handle session refresh
-- CI/CD pipelines should complete within 2 hours
-- Use pagination for large Terraform applies
-- Consider splitting very large deployments
+- Supports long-running Terraform applies and CDK deployments
+- CI/CD pipelines have ample time to complete
+- For shorter tasks, request a shorter duration explicitly
 
 **Best Practices:**
 
 ```bash
-# Set explicit duration (max 7200 seconds)
+# Set explicit duration (max 43200 seconds)
 aws sts assume-role \
   --duration-seconds 3600 \  # 1 hour for quick deployments
   --role-arn "..."
-  
+
 # For Terraform, use shorter refresh intervals
 provider "aws" {
   assume_role {
@@ -319,15 +334,15 @@ aws iam get-role --role-name org-automation-broker-role
 aws iam get-role --role-name org-default-deployment-role \
   --query 'Role.MaxSessionDuration'
 
-# Use duration <= 7200 seconds
-aws sts assume-role --duration-seconds 7200 ...
+# Use duration <= 43200 seconds
+aws sts assume-role --duration-seconds 43200 ...
 ```
 
 **Issue: Permission denied for specific actions**
 
 ```bash
 # Check if action is denied by permission boundary
-# See: baseline/terraform/boundary-policies/Boundary-Default.json
+# See: baseline/terraform/boundary-policies/Default.json
 
 # Verify you're not trying to modify org-* resources
 # Verify you're attaching boundaries to new roles
@@ -360,8 +375,8 @@ baseline/terraform/
 ├── outputs.tf                      # Output values
 ├── data.tf                         # Data sources
 └── boundary-policies/              # Boundary policy templates
-    ├── Boundary-Default.json
-    └── Boundary-ReadOnly.json
+    ├── Default.json
+    └── ReadOnly.json
 ```
 
 **Related Documentation:**
@@ -377,12 +392,12 @@ baseline/terraform/
 1. Retrieve AFT management account ID from SSM
 2. Retrieve organization ID from Organizations API
 3. Create platform deployment role (org-default-deployment-role)
-   ├─ Trust policy: org-automation-broker-role
+   ├─ Trust policy: org-automation-broker-role + CodeBuild-*-ServiceRole
    ├─ Attach: AdministratorAccess
    ├─ Boundary: Boundary-Default
    └─ Tags: Merged from locals.tf
 4. Create application deployment role (application-default-deployment-role)
-   ├─ Trust policy: application-automation-broker-role-{account-id}
+   ├─ Trust policy: application-automation-broker-role-{account-id} + CodeBuild-*-ServiceRole
    ├─ Attach: AdministratorAccess
    ├─ Boundary: Boundary-Default
    └─ Tags: Merged from locals.tf
@@ -401,13 +416,13 @@ data "aws_organizations_organization" "current" {}
 
 # Step 3: Define locals for reuse
 locals {
-  automation_account_id = data.aws_ssm_parameter.aft_management_account_id.value
+  automation_account_id = local.aft_management_account_id
   organization_id       = data.aws_organizations_organization.current.id
-  
+
   deployment_role_config = {
-    max_session_duration = 7200
+    max_session_duration = 43200 # 12 hours
     managed_policy_arn   = "arn:aws:iam::aws:policy/AdministratorAccess"
-    boundary_policy_name = "Boundary-Default"
+    boundary_policy_name = "Default"
   }
 }
 
@@ -415,24 +430,36 @@ locals {
 resource "aws_iam_role" "org_default_deployment" {
   name                 = "${var.protected_role_prefix}-default-deployment-role"
   max_session_duration = local.deployment_role_config.max_session_duration
-  permissions_boundary = aws_iam_policy.boundaries["Boundary-Default"].arn
-  
+  permissions_boundary = aws_iam_policy.boundaries["Default"].arn
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        AWS = "arn:aws:iam::${local.automation_account_id}:role/org-automation-broker-role"
-      }
-      Action = "sts:AssumeRole"
-      Condition = {
-        StringEquals = {
-          "aws:PrincipalOrgID" = local.organization_id
+    Statement = [
+      {
+        Sid    = "TrustBrokerRole"
+        Effect = "Allow"
+        Principal = { AWS = "arn:aws:iam::${local.automation_account_id}:root" }
+        Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "aws:PrincipalOrgID" = local.organization_id
+            "aws:PrincipalArn"   = "arn:aws:iam::${local.automation_account_id}:role/org/${var.protected_role_prefix}-automation-broker-role"
+          }
+        }
+      },
+      {
+        Sid    = "TrustCodeBuildServiceRoles"
+        Effect = "Allow"
+        Principal = { AWS = "arn:aws:iam::${local.automation_account_id}:root" }
+        Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = { "aws:PrincipalOrgID" = local.organization_id }
+          StringLike   = { "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/CodeBuild-*-ServiceRole" }
         }
       }
-    }]
+    ]
   })
-  
+
   tags = merge(
     local.common_tags,          # ManagedBy, AFTCustomization
     local.deployment_role_tags, # Purpose, Protection
@@ -463,7 +490,7 @@ resource "aws_iam_role" "org_default_deployment" {
 
 - **Name**: `org-default-deployment-role` (with variable prefix)
 - **Purpose**: Platform/infrastructure deployment role
-- **Trust**: `org-automation-broker-role` in automation account
+- **Trust**: `org-automation-broker-role` + `CodeBuild-*-ServiceRole` in automation account
 - **Permissions**: AdministratorAccess with Boundary-Default
 - **Access**: `aws_iam_role.org_default_deployment.arn`
 
@@ -471,7 +498,7 @@ resource "aws_iam_role" "org_default_deployment" {
 
 - **Name**: `application-default-deployment-role`
 - **Purpose**: Application workload deployment role
-- **Trust**: `application-automation-broker-role-{account-id}` in automation account
+- **Trust**: `application-automation-broker-role-{account-id}` + `CodeBuild-*-ServiceRole` in automation account
 - **Permissions**: AdministratorAccess with Boundary-Default
 - **Access**: `aws_iam_role.application_default_deployment.arn`
 
@@ -516,7 +543,7 @@ resource "aws_iam_role" "security_scanner" {
   max_session_duration = 3600  # 1 hour for scanners
   
   # Use Boundary-ReadOnly for read-only access
-  permissions_boundary = aws_iam_policy.boundaries["Boundary-ReadOnly"].arn
+  permissions_boundary = aws_iam_policy.boundaries["ReadOnly"].arn
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -732,7 +759,7 @@ aws organizations describe-organization
 **Issue: Boundary policy not found**
 
 ```
-Error: aws_iam_policy.boundaries["Boundary-Default"] is empty map
+Error: aws_iam_policy.boundaries["Default"] is empty map
 ```
 
 **Causes:**
@@ -801,10 +828,10 @@ aws sts assume-role \
 
 ### Current Deployment Roles
 
-| Role Name | Trust Principal | Boundary | Session Duration | Purpose |
-|-----------|----------------|----------|------------------|---------|
-| `org-default-deployment-role` | `org-automation-broker-role` | Boundary-Default | 2 hours | Platform infrastructure |
-| `application-default-deployment-role` | `application-automation-broker-role-{account-id}` | Boundary-Default | 2 hours | Application workloads |
+| Role Name | Trust Principals | Boundary | Session Duration | Purpose |
+|-----------|-----------------|----------|------------------|---------|
+| `org-default-deployment-role` | `org-automation-broker-role`, `CodeBuild-*-ServiceRole` | Boundary-Default | 12 hours | Platform infrastructure |
+| `application-default-deployment-role` | `application-automation-broker-role-{account-id}`, `CodeBuild-*-ServiceRole` | Boundary-Default | 12 hours | Application workloads |
 
 ### Outputs
 
@@ -852,9 +879,9 @@ aws sts assume-role \
 **`protected_role_prefix`**
 
 - **Type**: `string`
-- **Default**: `"org-*"`
+- **Default**: `"org"`
 - **Description**: Prefix for protected roles (used in role name)
-- **Usage**: Platform deployment role name uses this prefix
+- **Usage**: Platform deployment role name uses this prefix (e.g., `org-default-deployment-role`)
 
 ---
 

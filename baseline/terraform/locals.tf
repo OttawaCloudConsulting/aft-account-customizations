@@ -6,13 +6,13 @@ locals {
     ManagedBy        = "AFT"
     AFTCustomization = "Baseline"
   }
-  
+
   # Tags specific to IAM Permission Boundaries
   boundary_tags = {
     Purpose    = "PermissionBoundary"
     Protection = "PrivilegeEscalationPrevention"
   }
-  
+
   # Tags specific to IAM Deployment Roles
   deployment_role_tags = {
     Purpose    = "DeploymentAutomation"

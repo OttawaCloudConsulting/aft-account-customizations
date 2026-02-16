@@ -8,15 +8,15 @@ data "aws_organizations_organization" "current" {}
 locals {
   # Automation account ID is extracted from aft_admin_role_arn in locals-aft.tf (generated from Jinja template)
   automation_account_id = local.aft_management_account_id
-  
+
   # Current organization ID for aws:PrincipalOrgID condition
   organization_id = data.aws_organizations_organization.current.id
-  
+
   # Common deployment role configuration
   deployment_role_config = {
-    max_session_duration = 7200 # 2 hours
+    max_session_duration = 43200 # 12 hours
     managed_policy_arn   = "arn:aws:iam::aws:policy/AdministratorAccess"
-    boundary_policy_name = "Boundary-Default"
+    boundary_policy_name = "Default"
   }
 }
 
@@ -34,6 +34,7 @@ resource "aws_iam_role" "org_default_deployment" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "TrustBrokerRole"
         Effect = "Allow"
         Principal = {
           AWS = "arn:aws:iam::${local.automation_account_id}:root"
@@ -42,7 +43,23 @@ resource "aws_iam_role" "org_default_deployment" {
         Condition = {
           StringEquals = {
             "aws:PrincipalOrgID" = local.organization_id
-            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/org/${var.protected_role_prefix}-automation-broker-role"
+            "aws:PrincipalArn"   = "arn:aws:iam::${local.automation_account_id}:role/org/${var.protected_role_prefix}-automation-broker-role"
+          }
+        }
+      },
+      {
+        Sid    = "TrustCodeBuildServiceRoles"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${local.automation_account_id}:root"
+        }
+        Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "aws:PrincipalOrgID" = local.organization_id
+          }
+          StringLike = {
+            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/CodeBuild-*-ServiceRole"
           }
         }
       }
@@ -80,6 +97,7 @@ resource "aws_iam_role" "application_default_deployment" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "TrustBrokerRole"
         Effect = "Allow"
         Principal = {
           AWS = "arn:aws:iam::${local.automation_account_id}:root"
@@ -88,7 +106,23 @@ resource "aws_iam_role" "application_default_deployment" {
         Condition = {
           StringEquals = {
             "aws:PrincipalOrgID" = local.organization_id
-            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/org/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
+            "aws:PrincipalArn"   = "arn:aws:iam::${local.automation_account_id}:role/org/application-automation-broker-role-${data.aws_caller_identity.current.account_id}"
+          }
+        }
+      },
+      {
+        Sid    = "TrustCodeBuildServiceRoles"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${local.automation_account_id}:root"
+        }
+        Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "aws:PrincipalOrgID" = local.organization_id
+          }
+          StringLike = {
+            "aws:PrincipalArn" = "arn:aws:iam::${local.automation_account_id}:role/CodeBuild-*-ServiceRole"
           }
         }
       }

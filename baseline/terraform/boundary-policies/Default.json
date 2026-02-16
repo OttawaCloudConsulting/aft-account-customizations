@@ -2,13 +2,9 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AllowOrganizationVisibility",
+      "Sid": "AllowAllServices",
       "Effect": "Allow",
-      "Action": [
-        "organizations:DescribeOrganization",
-        "organizations:ListAccounts",
-        "organizations:ListAccountsForParent"
-      ],
+      "Action": "*",
       "Resource": "*"
     },
     {
