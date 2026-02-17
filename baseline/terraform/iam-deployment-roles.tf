@@ -28,7 +28,7 @@ resource "aws_iam_role" "org_default_deployment" {
   path                 = "/org/"
   description          = "Platform deployment role for AFT automation account via org-automation-broker-role"
   max_session_duration = local.deployment_role_config.max_session_duration
-  permissions_boundary = aws_iam_policy.boundaries[local.deployment_role_config.boundary_policy_name].arn
+  # permissions_boundary = aws_iam_policy.boundaries[local.deployment_role_config.boundary_policy_name].arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
