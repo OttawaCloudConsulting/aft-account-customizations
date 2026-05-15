@@ -1,0 +1,79 @@
+name: OIDC Federation Validation
+
+# Runs on every push and pull request that touches Terraform or CI policy files.
+# Enforces three automated controls from Feature 7 (Validation & Test Plan):
+#   1. terraform validate  — syntax + validation{} block failures
+#   2. StringLike grep     — no StringLike in iam-oidc-federation.tf
+#   3. terraform test      — trust-policy snapshot assertions
+#
+# Does not require AWS credentials. Uses mock_provider "aws" in the test file.
+# Requires Terraform >= 1.8.0 (templatestring function) and >= 1.7.0 (mock_provider).
+# See: baseline/terraform/tests/oidc-federation.tftest.hcl
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+    paths:
+      - "baseline/terraform/**"
+      - ".github/policy/**"
+      - ".github/workflows/oidc-validate.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "baseline/terraform/**"
+      - ".github/policy/**"
+      - ".github/workflows/oidc-validate.yml"
+
+jobs:
+  validate:
+    name: Validate Terraform + OIDC Policy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      - name: Terraform fmt check
+        run: terraform -chdir=baseline/terraform fmt -check -recursive
+
+      # locals-aft.tf is a Jinja-rendered file injected by the AFT CodeBuild
+      # pipeline at runtime. It defines local.aft_management_account_id (extracted
+      # from the AFT admin role ARN). A minimal stub is generated here so that
+      # terraform validate and terraform test can run in CI without CodeBuild.
+      # The stub value "000000000000" is intentionally non-real and will never
+      # match data.aws_caller_identity.current.account_id in the mock provider.
+      - name: Generate AFT locals stub for CI
+        run: |
+          printf 'locals {\n  aft_management_account_id = "000000000000"\n}\n' \
+            > baseline/terraform/locals-aft.tf
+
+      - name: Terraform init (no backend)
+        run: terraform -chdir=baseline/terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=baseline/terraform validate
+
+      - name: Check for StringLike in OIDC trust policy
+        run: |
+          if grep -n "StringLike" baseline/terraform/iam-oidc-federation.tf; then
+            echo "FAIL: StringLike found in iam-oidc-federation.tf." >&2
+            echo "Only StringEquals is permitted for OIDC trust conditions." >&2
+            echo "See Design Decision #7 in docs/ARCHITECTURE_AND_DESIGN-OIDC.md." >&2
+            exit 1
+          fi
+          echo "PASS: No StringLike found in iam-oidc-federation.tf."
+
+      - name: Terraform test (trust-policy snapshot)
+        run: terraform -chdir=baseline/terraform test
+
+      - name: Remove AFT locals stub
+        if: always()
+        run: rm -f baseline/terraform/locals-aft.tf

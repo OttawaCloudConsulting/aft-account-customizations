@@ -4,77 +4,90 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AFT (Account Factory for Terraform) account customizations for AWS Control Tower. Applies IAM security governance (permission boundaries, deployment roles) to newly vended AWS accounts. Runs via AWS CodeBuild pipeline triggered by AFT.
+AFT (Account Factory for Terraform) account customizations for AWS Control Tower. Applies IAM security governance (permission boundaries, deployment roles) and CDK bootstrap to newly vended AWS accounts. Executed by AWS CodeBuild as part of the AFT pipeline — there is no local build/test system.
 
-## Architecture
+## Customization Types
 
-### Customization Types
+Three top-level directories, one per AFT customization stage. Each has the same shape: `terraform/` (IaC) + `api_helpers/` (pre/post shell scripts + python).
 
-- **baseline/** — Applied to every vended account (primary working area)
-- **core/** — Core/infrastructure accounts only (minimal config)
-- **workload/** — Application/workload accounts only (minimal config)
+| Dir | Applied to | Status |
+|-----|------------|--------|
+| `baseline/` | Every vended account | Primary working area — all real IaC lives here |
+| `core/` | Core/infrastructure accounts only | Skeleton only (jinja templates + empty helpers) |
+| `workload/` | Application/workload accounts only | Skeleton only (jinja templates + empty helpers) |
 
-Each customization has: `terraform/` (IaC), `api_helpers/` (pre/post shell scripts + python)
+When asked to add a new customization, ask whether it belongs in `baseline` (universal) or one of the scoped types before writing code.
 
-### Execution Flow
+## Execution Flow (CodeBuild Runtime)
 
-1. CodeBuild triggers on account vend
-2. `pre-api-helpers.sh` runs (CDK bootstrap)
-3. Jinja2 templates (`.jinja` files) are rendered with env vars
-4. `terraform init && terraform apply`
-5. `post-api-helpers.sh` runs
+1. AFT CodeBuild triggers on account vend with `CUSTOMIZATION` set to `baseline`, `core`, or `workload`
+2. `pre-api-helpers.sh` runs — in `baseline/` this calls `shell_scripts/cdk-bootstrap.sh` to bootstrap CDK in the vended account with trust to the AFT automation account
+3. AFT renders the `.jinja` files (`aft-providers.jinja`, `backend.jinja`, `locals-aft.tf.jinja`) into real `.tf` files using pipeline-supplied variables (`target_admin_role_arn`, `aft_admin_role_arn`, backend bucket, etc.)
+4. `terraform init && terraform apply` runs against the vended account, assuming the rendered admin role
+5. `post-api-helpers.sh` runs (currently a placeholder)
 
-### Security Model (Two-Layer Defense)
+The provider, backend, and AFT-account-ID lookup do not exist as plain `.tf` files — they are generated from `.jinja` templates each run. Do not commit rendered `providers.tf` / `backend.tf` / `locals-aft.tf`.
 
-**Layer 1 — SCP (Organization):** All IAM roles must either use `org-*` prefix OR have a `Boundary-*` permission boundary attached.
+## Security Architecture (Baseline)
 
-**Layer 2 — Permission Boundaries (Account):** All `Boundary-*` policies deny privilege escalation (creating `org-*` roles, modifying boundaries, billing changes, security service tampering).
+Two layers enforce that workload roles can operate freely but cannot escalate privilege:
 
-### Key Design Patterns
+- **Layer 1 — SCP (org level, not in this repo):** all IAM roles must either use `org-*` prefix or have a `Boundary-*` permission boundary attached
+- **Layer 2 — Permission Boundaries (this repo, `baseline/terraform/`):** `Boundary-*` policies deny creating `org-*` roles, modifying boundaries, billing changes, security service tampering, IdC changes, CloudTrail/Config changes, and log deletion
 
-- **Dynamic policy discovery:** Drop a `.json` file in `baseline/terraform/boundary-policies/` — Terraform auto-discovers it via `fileset()` and creates the IAM policy as `Boundary-<filename>`. No code changes needed. Do NOT include the `Boundary-` prefix in the filename.
-- **Template variable injection:** Boundary JSON policies use `${account_id}`, `${protected_role_prefix}`, `${boundary_policy_prefix}`, `${boundary_name}` — rendered by Terraform `templatefile()`.
-- **Prefix vs Pattern distinction:** Variables hold prefixes (e.g., `org`), policies use patterns (e.g., `org-*`). AWS resource names don't allow `*`, but IAM policy resources do.
-- **Cross-account trust:** Deployment roles support two trust patterns — broker role chaining (`org-automation-broker-role`) and direct CodeBuild assumption (`CodeBuild-*-ServiceRole`). Both use `aws:PrincipalOrgID` (org membership) + `aws:PrincipalArn` conditions.
+Resources deployed in every account:
 
-### Important Files
+| Resource | Built by | Notes |
+|---|---|---|
+| `Boundary-Default` / `Boundary-ReadOnly` IAM policies | `iam-permission-boundaries.tf` via `fileset()` over `boundary-policies/*.json` | Policy name is `${boundary_policy_prefix}-${filename-without-.json}` |
+| `org-default-deployment-role` | `iam-deployment-roles.tf` | Platform deployments; admin policy; **no** permissions boundary currently (commented out) |
+| `application-default-deployment-role` | `iam-deployment-roles.tf` | Application deployments; admin policy bounded by `Boundary-Default` |
+| `crossplane-aws-iam` | `iam-oidc-federation.tf` | OIDC-federated workload role; trust bound to `system:serviceaccount:crossplane-provider-aws:provider-aws-iam`; permission boundary = `Boundary-Default`; created only when `var.oidc_federation_enabled = true` |
+| CDK Toolkit stack | `baseline/api_helpers/shell_scripts/cdk-bootstrap.sh` | Trusts `AFT_MGMT_ACCOUNT` |
 
-| File | Purpose |
-|------|---------|
-| `baseline/terraform/iam-permission-boundaries.tf` | Dynamic boundary creation with `for_each` |
-| `baseline/terraform/iam-deployment-roles.tf` | Platform & application deployment roles |
-| `baseline/terraform/boundary-policies/*.json` | Permission boundary policy templates |
-| `baseline/terraform/variables.tf` | `protected_role_prefix` ("org"), `boundary_policy_prefix` ("Boundary") |
-| `baseline/terraform/locals.tf` | Common tags: `ManagedBy: AFT`, `AFTCustomization: Baseline` |
-| `baseline/api_helpers/shell_scripts/cdk-bootstrap.sh` | CDK bootstrap for new accounts |
+## Key Patterns to Preserve
 
-### Jinja Templates
+- **Dynamic boundary discovery.** Drop a new `.json` file into `baseline/terraform/boundary-policies/` and it becomes `Boundary-<filename>` automatically via `for_each` on `fileset()`. Filenames must NOT include the `Boundary-` prefix — the prefix is added in `name = "${var.boundary_policy_prefix}-${each.key}"`. Renaming a JSON file changes the `for_each` key and forces destroy/recreate of the IAM policy.
 
-`aft-providers.jinja`, `backend.jinja`, `locals-aft.tf.jinja` are processed by the AFT CodeBuild pipeline before Terraform runs. They are NOT standard Terraform files.
+- **Template variable injection in JSON.** Boundary policy JSON files are processed by `templatefile()` and may reference `${account_id}`, `${protected_role_prefix}`, `${boundary_policy_prefix}`, and `${boundary_name}` (the self-reference, set per policy in the `merge()` call).
 
-## Available CodeBuild Environment Variables
+- **Prefix vs pattern distinction (load-bearing).** `var.protected_role_prefix = "org"` and `var.boundary_policy_prefix = "Boundary"` are plain prefixes — NO wildcards. Wildcards (`org-*`, `Boundary-*`) are added only in JSON policy `Resource` strings, never in `.tf` resource names (AWS role/policy names disallow `*`). See `baseline/docs/variable-naming-convention.md`.
 
-Key variables available at runtime: `VENDED_ACCOUNT_ID`, `AFT_MGMT_ACCOUNT`, `AFT_ADMIN_ROLE_ARN`, `VENDED_EXEC_ROLE_ARN`, `CUSTOMIZATION`, `CT_MGMT_REGION`, `TF_VERSION`. Full list in README.md.
+- **Dual trust pattern on deployment roles.** Each deployment role has two `sts:AssumeRole` statements: `TrustBrokerRole` (`StringEquals` on the specific broker role ARN) and `TrustCodeBuildServiceRoles` (`StringLike` on `CodeBuild-*-ServiceRole`). Both gated by `aws:PrincipalOrgID`. The `CodeBuild-*-ServiceRole` pattern is the terraform-pipelines naming convention — keep both statements when modifying trust policies.
 
-## Commands
+- **12-hour session duration** (`max_session_duration = 43200`) on deployment roles is intentional — supports long-running Terraform/CDK applies. Don't shorten without checking with the user.
 
-No local build/test system. Terraform runs in CodeBuild. For local validation:
+- **OIDC federation JSON-wrapper discovery.** When `var.oidc_federation_enabled = true`, `iam-oidc-federation.tf` uses `fileset()` over `baseline/terraform/oidc-federation-policies/*.json` — parallel to the boundary discovery pattern. Each file defines one federation role; the filename minus `.json` is the role key. Adding a federated workload is a one-file change. Filenames in `oidc-federation-policies/` are immutable post-deploy (rename changes the `for_each` key; `lifecycle { prevent_destroy = true }` blocks the resulting destroy at plan time). **Symmetric coupling**: renaming `boundary-policies/Default.json` breaks the `boundary_key = "Default"` lookup in every federation role that does not set an explicit `boundary_key` — the `precondition` block will fail at plan time. Both rename constraints must be preserved together.
+
+## CodeBuild Runtime Environment Variables
+
+The AFT pipeline injects these at runtime — use them in `api_helpers/` scripts and as data sources for Terraform decisions. Most important:
+
+- `AFT_MGMT_ACCOUNT`, `AFT_ADMIN_ROLE_ARN`, `AFT_EXEC_ROLE_ARN` — AFT automation account
+- `VENDED_ACCOUNT_ID`, `VENDED_EXEC_ROLE_ARN` — target account being customized
+- `CUSTOMIZATION` — which directory is being applied (`baseline` | `core` | `workload`)
+- `CT_MGMT_REGION`, `AWS_DEFAULT_REGION`, `TF_VERSION`
+
+Full table in `README.md`. The AFT management account ID is also derivable inside Terraform from `local.aft_management_account_id` (extracted from `aft_admin_role_arn` in the rendered `locals-aft.tf`).
+
+## Local Validation
+
+No AWS credentials are available locally. Validation is limited to:
 
 ```bash
-# Format check
-terraform -chdir=baseline/terraform fmt -check
-
-# Validate syntax (requires init, which needs AWS credentials)
-terraform -chdir=baseline/terraform validate
-
-# Format all terraform files
-terraform -chdir=baseline/terraform fmt
+terraform -chdir=baseline/terraform fmt -check    # format check
+terraform -chdir=baseline/terraform fmt           # apply formatting
+terraform -chdir=baseline/terraform validate      # syntax — requires terraform init
 ```
 
-## Agent Protocol
+`terraform init` will fail without backend credentials, so `validate` is typically only useful in CodeBuild. Real validation happens in the AFT CodeBuild pipeline on next account provisioning. State-impact changes (renaming `for_each` keys, changing logical IDs of stateful IAM resources) should be called out in PR descriptions.
 
-See `agents/CLAUDE.md` for defensive coding protocol. Key rules:
-- Pipe JSON-outputting commands through `jq`
-- Use `git add <file>` individually, never `git add .`
-- Session memory persists in `agents/memory/` as markdown files
-- When something fails: stop, report to user, wait for confirmation before retrying
+## Project Instructions in `.claude/`
+
+Several rule files in `.claude/rules/` are loaded automatically as project instructions: defensive coding protocol (epistemology, anti-slop, session management), Terraform best practices, CDK best practices, Kubernetes/Crossplane best practices, agent delegation matrix. Don't re-derive their guidance — assume it's already active. The `.claude/skills/` directory contains user-invokable slash commands (e.g., `/start-feature`, `/investigate`, `/update-docs-terraform`, `/test-terraform`, the various compliance assessments) — only invoke them when the user explicitly asks.
+
+## Repository Hygiene
+
+- `.gitignore` excludes `.terraform/`, state, plans, `*.tfvars`, and the `agents/` working directory (ephemeral session memory)
+- Never use `git add .` — stage files individually
+- The `.jinja` files ARE source of truth; never commit the rendered `.tf` outputs

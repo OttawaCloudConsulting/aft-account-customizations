@@ -111,7 +111,7 @@ For the pattern `org-*`:
    - `protected_role_prefix`: Changed from `"org-*"` to `"org"`
    - `boundary_policy_prefix`: Changed from `"Boundary-*"` to `"Boundary"`
 
-2. **[baseline/terraform/boundary-policies/Boundary-Default.json](../terraform/boundary-policies/Boundary-Default.json)**:
+2. **[baseline/terraform/boundary-policies/Default.json](../terraform/boundary-policies/Default.json)**:
    - Added `-*` suffix explicitly to resource patterns
    - `${protected_role_prefix}` → `${protected_role_prefix}-*`
    - `${boundary_policy_prefix}` → `${boundary_policy_prefix}-*`

@@ -99,3 +99,88 @@ aws ssm get-parameter \
   --query "Parameter.Value" \
   --output text
 ```
+
+## Terraform Input Variables
+
+These variables are set in the AFT customization framework per-account (distinct from the
+CodeBuild environment variables above). All are declared in `baseline/terraform/variables.tf`.
+
+### OIDC Federation Variables
+
+| Variable | Type | Default | Validation | Description |
+|----------|------|---------|------------|-------------|
+| `oidc_federation_enabled` | `bool` | `false` | — | Master feature flag. When `false`, no OIDC resources are created (zero state churn for all existing accounts). Set to `true` per-account to roll out federation. |
+| `oidc_federation_security_tier_accounts` | `bool` | `false` | — | When `false`, federation is skipped in Audit and Log Archive accounts. Set to `true` only after a documented threat-model review — see Blast Radius Analysis in `docs/ARCHITECTURE_AND_DESIGN-OIDC.md`. |
+| `oidc_issuer_url` | `string` | `https://oidc.k8s.occ.ottawacloudconsulting.com` | must match `^https://[a-z0-9.\-]+$` | Cluster OIDC issuer URL. Pinned by K8s Platform team hand-off. Validation rejects trailing slashes, mixed case, and non-`https` schemes. |
+| `oidc_thumbprints` | `list(string)` | `[]` | each entry must be a 40-character hex SHA-1; non-empty when `oidc_federation_enabled = true` | SHA-1 thumbprints of the cluster issuer's CA chain. Supplied by the K8s Platform team after the OIDC discovery host (Layer A) is live. List supports CA rotation overlap (AWS allows up to 5 entries). |
+| `oidc_audience` | `string` | `sts.amazonaws.com` | non-empty | Default audience claim (`aud`) in federation tokens. Per-role override available via the `audience` field in each JSON wrapper. |
+| `oidc_federation_role_prefix` | `string` | `""` | empty string or kebab-case (`^[a-z][a-z0-9-]*$`) | Prefix prepended to discovered role names when the JSON wrapper does not set `role_name_override`. Empty default preserves the hand-off-pinned `crossplane-aws-iam` name at MVP. |
+
+### Cutover Sequence
+
+When rolling out OIDC federation to already-vended accounts:
+
+1. Merge this repo with `oidc_federation_enabled = false` (default) — zero impact on the AFT pipeline.
+2. Confirm CI gates pass on `main` (terraform validate, OPA rule, snapshot test — see Feature 7).
+3. Obtain CA thumbprints from the K8s Platform team (available once Layer A is live).
+4. Set `oidc_federation_enabled = true` and supply `oidc_thumbprints` in the **named test account** (`docs/oidc/test-account.md`). Trigger AFT customization re-run; verify outputs.
+5. K8s Platform team confirms end-to-end federation in the test account.
+6. Roll out to workload accounts in batches of ≤ 10 per day, verifying outputs between batches per `docs/oidc/rollout-checklist.md`.
+
+## OIDC Federation Pattern
+
+### Overview
+
+When `var.oidc_federation_enabled = true`, AFT provisions per-account OIDC federation
+primitives: one `aws_iam_openid_connect_provider` and one IAM role per file discovered in
+`baseline/terraform/oidc-federation-policies/`.
+
+Adding a new federated workload is a **one-file change**: drop a JSON wrapper into
+`baseline/terraform/oidc-federation-policies/` and open a PR. No Terraform locals, no variable
+changes, no HCL edits are required.
+
+### JSON Wrapper Schema
+
+Each file in `baseline/terraform/oidc-federation-policies/` is a JSON object:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `subject` | string | **yes** | — | Exact `<issuer>:sub` claim value. Format: `system:serviceaccount:<namespace>:<sa-name>`. |
+| `policy` | object | **yes** | — | IAM policy document (`Version` + `Statement`). Processed by `templatefile()`; see template variables below. |
+| `audience` | string | no | `var.oidc_audience` | Per-role `<issuer>:aud` claim override. |
+| `boundary_key` | string | no | `"Default"` | Key into `aws_iam_policy.boundaries` (i.e., filename minus `.json` in `boundary-policies/`). Defaults to `Boundary-Default`. |
+| `role_name_override` | string | no | `null` | Verbatim IAM role name (≤ 64 chars). When unset, name = `${var.oidc_federation_role_prefix}-${key}` or `${key}`. |
+
+Template variables available inside `policy`:
+
+| Variable | Value |
+|----------|-------|
+| `account_id` | The vended account's AWS account ID. |
+| `region` | The AWS region of the current apply. |
+| `cluster_issuer_host` | Issuer hostname without `https://` (e.g., `oidc.k8s.occ.ottawacloudconsulting.com`). |
+
+### Minimal Example
+
+```json
+{
+  "subject": "system:serviceaccount:my-ns:my-sa",
+  "policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetObject"],
+        "Resource": ["arn:aws:s3:::my-bucket-${account_id}/*"]
+      }
+    ]
+  }
+}
+```
+
+### Filename Immutability
+
+Filenames in `oidc-federation-policies/` are immutable after first deployment. Renaming a file
+changes the `for_each` key and would attempt to destroy the IAM role — `lifecycle { prevent_destroy = true }` blocks this at plan time. A `precondition` on the role also fails the plan if the `boundary_key` field references a boundary file that does not exist.
+
+For full design details, failure modes, and the thumbprint rotation runbook, see
+`docs/ARCHITECTURE_AND_DESIGN-OIDC.md`.

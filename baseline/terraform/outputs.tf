@@ -55,3 +55,22 @@ output "organization_id" {
   description = "AWS Organization ID for trust policy validation"
   value       = local.organization_id
 }
+
+# ── OIDC Federation Outputs ──────────────────────────────────────────────────
+# Not marked sensitive — ARNs are not credentials; surfaced in CodeBuild logs
+# for K8s team verification. Design Decisions #12, #15.
+
+output "oidc_provider_arn" {
+  description = "ARN of the per-account OIDC provider. null when var.oidc_federation_enabled is false or the account is a security-tier account and the opt-in flag is false."
+  value       = try(aws_iam_openid_connect_provider.this[0].arn, null)
+}
+
+output "oidc_federation_role_arns" {
+  description = "Map of role-key to role ARN for all federation roles provisioned in this account. Empty map when OIDC federation is disabled."
+  value       = { for k, r in aws_iam_role.federation : k => r.arn }
+}
+
+output "oidc_module_version" {
+  description = "Version identifier of the OIDC federation module that produced these resources. Set by CI (git tag/SHA) or defaults to the static literal below."
+  value       = "feature/oidc-federation"
+}
