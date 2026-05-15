@@ -70,3 +70,6 @@ ENV/
 
 # AI working files
 agents/
+.claude
+memory/
+**/red-team/**
