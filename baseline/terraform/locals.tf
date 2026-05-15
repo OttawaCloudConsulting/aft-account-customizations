@@ -21,7 +21,7 @@ locals {
 }
 
 # ── OIDC Federation locals ───────────────────────────────────────────────────
-# Design decisions: #1, #17 in docs/ARCHITECTURE_AND_DESIGN-OIDC.md
+# Design decisions: #1, #17 in docs/oidc/ARCHITECTURE_AND_DESIGN.md
 
 locals {
   # Account IDs that receive no OIDC federation by default (security-tier).

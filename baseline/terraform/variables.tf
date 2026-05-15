@@ -11,7 +11,7 @@ variable "boundary_policy_prefix" {
 }
 
 # ── OIDC Federation (Layer B) ────────────────────────────────────────────────
-# Design decisions: #1, #5, #6, #10, #17 in docs/ARCHITECTURE_AND_DESIGN-OIDC.md
+# Design decisions: #1, #5, #6, #10, #17 in docs/oidc/ARCHITECTURE_AND_DESIGN.md
 # Feature flag is false by default — zero state churn until explicitly enabled.
 
 variable "oidc_federation_enabled" {
@@ -21,7 +21,7 @@ variable "oidc_federation_enabled" {
 }
 
 variable "oidc_federation_security_tier_accounts" {
-  description = "Allow OIDC federation in security-tier accounts (Audit, Log Archive, AFT management). When false (default), these accounts are excluded. Set to true only after a documented threat-model review. See Blast Radius Analysis in docs/ARCHITECTURE_AND_DESIGN-OIDC.md."
+  description = "Allow OIDC federation in security-tier accounts (Audit, Log Archive, AFT management). When false (default), these accounts are excluded. Set to true only after a documented threat-model review. See Blast Radius Analysis in docs/oidc/ARCHITECTURE_AND_DESIGN.md."
   type        = bool
   default     = false
 }

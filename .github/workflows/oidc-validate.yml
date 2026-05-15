@@ -62,14 +62,17 @@ jobs:
         run: terraform -chdir=baseline/terraform validate
 
       - name: Check for StringLike in OIDC trust policy
+        # Strip comment lines (first non-whitespace `#`) before grepping. The
+        # previous raw-file grep was over-broad and would falsely flag an
+        # explanatory comment such as `# StringLike is forbidden because ...`.
         run: |
-          if grep -n "StringLike" baseline/terraform/iam-oidc-federation.tf; then
-            echo "FAIL: StringLike found in iam-oidc-federation.tf." >&2
+          if grep -vE '^[[:space:]]*#' baseline/terraform/iam-oidc-federation.tf | grep -n "StringLike"; then
+            echo "FAIL: StringLike found in iam-oidc-federation.tf (non-comment line)." >&2
             echo "Only StringEquals is permitted for OIDC trust conditions." >&2
             echo "See Design Decision #7 in docs/ARCHITECTURE_AND_DESIGN-OIDC.md." >&2
             exit 1
           fi
-          echo "PASS: No StringLike found in iam-oidc-federation.tf."
+          echo "PASS: No StringLike found in iam-oidc-federation.tf (non-comment lines)."
 
       - name: Terraform test (trust-policy snapshot)
         run: terraform -chdir=baseline/terraform test

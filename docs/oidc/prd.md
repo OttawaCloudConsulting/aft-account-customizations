@@ -25,7 +25,7 @@ Provision per-account IAM OIDC federation primitives in every AFT-vended account
 
 ## Architecture
 
-See `docs/ARCHITECTURE_AND_DESIGN-OIDC.md` for the single source-of-truth diagram and component inventory. In summary: when `var.oidc_federation_enabled = true`, AFT creates one `aws_iam_openid_connect_provider` per vended account and one `aws_iam_role` per JSON wrapper file discovered in `baseline/terraform/oidc-federation-policies/`. The federated principal in the trust policy references `aws_iam_openid_connect_provider.this[0].arn` directly; condition keys use `aws_iam_openid_connect_provider.this[0].url` — no string interpolation of `var.oidc_issuer_url` into the trust policy.
+See `docs/oidc/ARCHITECTURE_AND_DESIGN.md` for the single source-of-truth diagram and component inventory. In summary: when `var.oidc_federation_enabled = true`, AFT creates one `aws_iam_openid_connect_provider` per vended account and one `aws_iam_role` per JSON wrapper file discovered in `baseline/terraform/oidc-federation-policies/`. The federated principal in the trust policy references `aws_iam_openid_connect_provider.this[0].arn` directly; condition keys use `aws_iam_openid_connect_provider.this[0].url` — no string interpolation of `var.oidc_issuer_url` into the trust policy.
 
 Code placement: `baseline/terraform/iam-oidc-federation.tf` alongside `iam-permission-boundaries.tf` and `iam-deployment-roles.tf`. Per-role JSON wrappers in `baseline/terraform/oidc-federation-policies/<role-key>.json`.
 
@@ -57,11 +57,11 @@ The `role_name_override` keeps the MVP role name `crossplane-aws-iam` to match t
 
 ### Feature 1: Architecture and Design
 
-Produce `docs/ARCHITECTURE_AND_DESIGN-OIDC.md` capturing component layout, design decisions, file organization, failure modes & recovery, blast-radius analysis, and the permission-boundary interaction. Note: this is a feature-scoped architecture doc — `docs/ARCHITECTURE_AND_DESIGN.md` remains the prior backport-feature doc and is left untouched.
+Produce `docs/oidc/ARCHITECTURE_AND_DESIGN.md` capturing component layout, design decisions, file organization, failure modes & recovery, blast-radius analysis, and the permission-boundary interaction. Note: this is a feature-scoped architecture doc — `docs/ARCHITECTURE_AND_DESIGN.md` remains the prior backport-feature doc and is left untouched.
 
 **Acceptance Criteria:**
 
-- `docs/ARCHITECTURE_AND_DESIGN-OIDC.md` exists with Overview, Component Inventory, Design Decisions (≥10, each with alternative-aware rationale), File Organization, Failure Modes & Recovery, Blast Radius Analysis, State Impact, and Out-of-Scope sections.
+- `docs/oidc/ARCHITECTURE_AND_DESIGN.md` exists with Overview, Component Inventory, Design Decisions (≥10, each with alternative-aware rationale), File Organization, Failure Modes & Recovery, Blast Radius Analysis, State Impact, and Out-of-Scope sections.
 - Design decisions cover: feature flag, scope (account-type-aware), file split, JSON wrapper schema, `fileset()` discovery, permission boundary attachment, thumbprint rotation handling, role-name convention, trust-policy `.arn`/`.url` references (not string interpolation), `prevent_destroy` decision, validation strategy, output strategy, state-impact handling, auto-application.
 - Cross-references to `REQUIREMENTS-OIDC.md`, `DESCOPE.md`, the K8s Platform team hand-off (snapshotted pinned-specifications subsection), and SCP source-of-truth are present.
 
@@ -72,7 +72,7 @@ Add OIDC configuration variables to `baseline/terraform/variables.tf` with `vali
 **Acceptance Criteria:**
 
 - `var.oidc_federation_enabled` declared as `bool`, default `false`. Description names this as the master gate for all OIDC resources.
-- `var.oidc_federation_security_tier_accounts` declared as `bool`, default `false`. Description references the Blast Radius Analysis in `docs/ARCHITECTURE_AND_DESIGN-OIDC.md`.
+- `var.oidc_federation_security_tier_accounts` declared as `bool`, default `false`. Description references the Blast Radius Analysis in `docs/oidc/ARCHITECTURE_AND_DESIGN.md`.
 - `var.oidc_issuer_url` declared as `string` with default `"https://oidc.k8s.occ.ottawacloudconsulting.com"`. Validation: `can(regex("^https://[a-z0-9.\\-]+$", var.oidc_issuer_url))` — rejects trailing slash, mixed case, missing scheme, `http://`.
 - `var.oidc_thumbprints` declared as `list(string)`, default `[]`. Validation: `var.oidc_federation_enabled == false || length(var.oidc_thumbprints) > 0` AND `alltrue([for t in var.oidc_thumbprints : can(regex("^[A-Fa-f0-9]{40}$", t))])` — required only when enabled; each entry must be a 40-char hex SHA-1.
 - `var.oidc_audience` declared as `string`, default `"sts.amazonaws.com"`. Validation: `length(var.oidc_audience) > 0`.

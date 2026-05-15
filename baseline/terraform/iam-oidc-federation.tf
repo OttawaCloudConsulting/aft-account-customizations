@@ -1,7 +1,7 @@
 # IAM OIDC Federation (Layer B)
 # Provisions per-account OIDC provider and per-role IAM roles from JSON wrappers.
 # All resources gated by local.oidc_federation_enabled (= local.oidc_provider_count > 0).
-# Design decisions: #3, #4, #7, #8, #9, #10, #11, #14, #16 in docs/ARCHITECTURE_AND_DESIGN-OIDC.md
+# Design decisions: #3, #4, #7, #8, #9, #10, #11, #14, #16 in docs/oidc/ARCHITECTURE_AND_DESIGN.md
 
 locals {
   # Discover per-role JSON wrapper files and decode them.
@@ -21,6 +21,13 @@ locals {
       ? v.role_name_override
       : (var.oidc_federation_role_prefix != "" ? "${var.oidc_federation_role_prefix}-${k}" : k)
     )
+  }
+
+  # Pre-render each wrapper's policy to a JSON string. templatestring()'s first
+  # argument must be a direct reference to a string value (var.X / local.X[key])
+  # — it cannot accept an inline jsonencode(...) expression.
+  oidc_role_policy_templates = {
+    for k, v in local.oidc_federation_roles : k => jsonencode(v.policy)
   }
 }
 
@@ -115,9 +122,11 @@ resource "aws_iam_role_policy" "federation" {
   role = aws_iam_role.federation[each.key].id
 
   # templatestring() renders ${account_id}, ${region}, ${cluster_issuer_host} in the
-  # policy JSON from the wrapper. Template variables documented in
+  # policy JSON from the wrapper. The first argument must be a direct reference to
+  # a string — we pre-render the wrapper policy to JSON in local.oidc_role_policy_templates
+  # so templatestring() can resolve it. Template variables documented in
   # oidc-federation-policies/README.md. Requires Terraform >= 1.8. Design Decision #16.
-  policy = templatestring(jsonencode(each.value.policy), {
+  policy = templatestring(local.oidc_role_policy_templates[each.key], {
     account_id          = data.aws_caller_identity.current.account_id
     region              = data.aws_region.current.name
     cluster_issuer_host = trimprefix(var.oidc_issuer_url, "https://")

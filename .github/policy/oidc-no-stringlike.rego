@@ -19,7 +19,13 @@ package oidc
 
 import rego.v1
 
+# Strip comment lines before scanning: the previous raw-file `contains` was
+# over-broad and would flag an explanatory comment such as
+# `# StringLike is forbidden because ...`. Only non-comment source lines must
+# be checked for the literal `StringLike`.
 deny contains msg if {
-    contains(input, "StringLike")
+    some line in split(input, "\n")
+    not startswith(trim_space(line), "#")
+    contains(line, "StringLike")
     msg := "iam-oidc-federation.tf must not use StringLike in any condition clause. Only StringEquals is permitted for OIDC trust policies. StringLike enables wildcard matching on sub or aud claims and can allow cross-tenant token acceptance."
 }

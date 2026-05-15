@@ -110,7 +110,7 @@ CodeBuild environment variables above). All are declared in `baseline/terraform/
 | Variable | Type | Default | Validation | Description |
 |----------|------|---------|------------|-------------|
 | `oidc_federation_enabled` | `bool` | `false` | — | Master feature flag. When `false`, no OIDC resources are created (zero state churn for all existing accounts). Set to `true` per-account to roll out federation. |
-| `oidc_federation_security_tier_accounts` | `bool` | `false` | — | When `false`, federation is skipped in Audit and Log Archive accounts. Set to `true` only after a documented threat-model review — see Blast Radius Analysis in `docs/ARCHITECTURE_AND_DESIGN-OIDC.md`. |
+| `oidc_federation_security_tier_accounts` | `bool` | `false` | — | When `false`, federation is skipped in Audit and Log Archive accounts. Set to `true` only after a documented threat-model review — see Blast Radius Analysis in `docs/oidc/ARCHITECTURE_AND_DESIGN.md`. |
 | `oidc_issuer_url` | `string` | `https://oidc.k8s.occ.ottawacloudconsulting.com` | must match `^https://[a-z0-9.\-]+$` | Cluster OIDC issuer URL. Pinned by K8s Platform team hand-off. Validation rejects trailing slashes, mixed case, and non-`https` schemes. |
 | `oidc_thumbprints` | `list(string)` | `[]` | each entry must be a 40-character hex SHA-1; non-empty when `oidc_federation_enabled = true` | SHA-1 thumbprints of the cluster issuer's CA chain. Supplied by the K8s Platform team after the OIDC discovery host (Layer A) is live. List supports CA rotation overlap (AWS allows up to 5 entries). |
 | `oidc_audience` | `string` | `sts.amazonaws.com` | non-empty | Default audience claim (`aud`) in federation tokens. Per-role override available via the `audience` field in each JSON wrapper. |
@@ -185,4 +185,4 @@ Filenames in `oidc-federation-policies/` are immutable after first deployment. R
 changes the `for_each` key and would attempt to destroy the IAM role — `lifecycle { prevent_destroy = true }` blocks this at plan time. A `precondition` on the role also fails the plan if the `boundary_key` field references a boundary file that does not exist.
 
 For full design details, failure modes, and the thumbprint rotation runbook, see
-`docs/ARCHITECTURE_AND_DESIGN-OIDC.md`.
+`docs/oidc/ARCHITECTURE_AND_DESIGN.md`.

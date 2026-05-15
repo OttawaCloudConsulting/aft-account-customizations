@@ -1,6 +1,6 @@
 # OIDC Federation — Failure Modes & Recovery
 
-Source of truth: `docs/ARCHITECTURE_AND_DESIGN-OIDC.md` §Failure Modes & Recovery.
+Source of truth: `docs/oidc/ARCHITECTURE_AND_DESIGN.md` §Failure Modes & Recovery.
 This runbook enumerates all eight failure modes and the exact operator action for each.
 
 ---

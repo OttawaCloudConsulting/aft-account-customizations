@@ -71,6 +71,6 @@ output "oidc_federation_role_arns" {
 }
 
 output "oidc_module_version" {
-  description = "Version identifier of the OIDC federation module that produced these resources. Set by CI (git tag/SHA) or defaults to the static literal below."
-  value       = "feature/oidc-federation"
+  description = "Static release identifier of the OIDC federation module that produced these resources. Bumped per release tag. Format: `<semver>` or `<semver>-<channel>`."
+  value       = "0.1.0-mvp"
 }
