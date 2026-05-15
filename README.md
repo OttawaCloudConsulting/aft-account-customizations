@@ -115,6 +115,8 @@ CodeBuild environment variables above). All are declared in `baseline/terraform/
 | `oidc_thumbprints` | `list(string)` | `[]` | each entry must be a 40-character hex SHA-1; non-empty when `oidc_federation_enabled = true` | SHA-1 thumbprints of the cluster issuer's CA chain. Supplied by the K8s Platform team after the OIDC discovery host (Layer A) is live. List supports CA rotation overlap (AWS allows up to 5 entries). |
 | `oidc_audience` | `string` | `sts.amazonaws.com` | non-empty | Default audience claim (`aud`) in federation tokens. Per-role override available via the `audience` field in each JSON wrapper. |
 | `oidc_federation_role_prefix` | `string` | `""` | empty string or kebab-case (`^[a-z][a-z0-9-]*$`) | Prefix prepended to discovered role names when the JSON wrapper does not set `role_name_override`. Empty default preserves the hand-off-pinned `crossplane-aws-iam` name at MVP. |
+| `audit_account_id` | `string` | `""` | empty or 12-digit; **required** when `oidc_federation_enabled = true` and `oidc_federation_security_tier_accounts = false` | AWS account ID of the Control Tower Audit account. Added to `local.security_tier_account_ids` so federation is skipped by default. Cross-variable validation blocks `terraform plan` if the federation flag is on but this value is missing — the default-deny guard cannot identify the account without it. |
+| `log_archive_account_id` | `string` | `""` | empty or 12-digit; **required** when `oidc_federation_enabled = true` and `oidc_federation_security_tier_accounts = false` | AWS account ID of the Control Tower Log Archive account. Same role and constraint as `audit_account_id`. |
 
 ### Cutover Sequence
 
@@ -123,7 +125,7 @@ When rolling out OIDC federation to already-vended accounts:
 1. Merge this repo with `oidc_federation_enabled = false` (default) — zero impact on the AFT pipeline.
 2. Confirm CI gates pass on `main` (terraform validate, OPA rule, snapshot test — see Feature 7).
 3. Obtain CA thumbprints from the K8s Platform team (available once Layer A is live).
-4. Set `oidc_federation_enabled = true` and supply `oidc_thumbprints` in the **named test account** (`docs/oidc/test-account.md`). Trigger AFT customization re-run; verify outputs.
+4. Set `oidc_federation_enabled = true`, supply `oidc_thumbprints`, and set `audit_account_id` + `log_archive_account_id` in the **named test account** (`docs/oidc/test-account.md`). Trigger AFT customization re-run; verify outputs.
 5. K8s Platform team confirms end-to-end federation in the test account.
 6. Roll out to workload accounts in batches of ≤ 10 per day, verifying outputs between batches per `docs/oidc/rollout-checklist.md`.
 

@@ -20,6 +20,8 @@ This is Layer B of the cluster-OIDC-issuer-pod-identity project. Layer A (the OI
                  │   var.oidc_thumbprints              (list, default [])│
                  │   var.oidc_audience                 (default sts.*)   │
                  │   var.oidc_federation_role_prefix   (default "")      │
+                 │   var.audit_account_id              (default "")      │
+                 │   var.log_archive_account_id        (default "")      │
                  │                                                       │
                  │ iam-oidc-federation.tf                                │
                  │   aws_iam_openid_connect_provider.this  (count=0|1)   │
@@ -208,7 +210,13 @@ Per-account apply latency × accounts must complete within the K8s rotation wind
 | Audit account | No (opt-in via `var.oidc_federation_security_tier_accounts = true`) | Control Tower security-tier account. Federation would introduce a non-audit IAM identity into an account that should be most isolated. Threat model: a compromised SA token could attempt `AssumeRoleWithWebIdentity` against the audit account; permission boundary mitigates but blast radius is still expanded. |
 | Log Archive account | No (opt-in) | Same rationale as Audit. |
 
-`local.is_security_tier_account` is derived from a hardcoded list of account IDs in `baseline/terraform/locals.tf` (initially: Audit account ID + Log Archive account ID + AFT management account ID). Future enhancement: switch to AWS Organizations tag lookup once org-tagging strategy is finalized.
+`local.is_security_tier_account` is derived from `local.security_tier_account_ids`, the union of:
+
+- `local.aft_management_account_id` — extracted from the AFT-injected admin role ARN in the rendered `locals-aft.tf`.
+- `var.audit_account_id` — operator-supplied via tfvars; default `""`.
+- `var.log_archive_account_id` — operator-supplied via tfvars; default `""`.
+
+`compact()` drops empty strings so default-empty variables don't expand the exclusion set. Cross-variable validation on both account-ID variables blocks `terraform plan` when `oidc_federation_enabled = true` and `oidc_federation_security_tier_accounts = false` but either ID is unset — so the default-deny guard cannot be silently bypassed by forgetting to set the variable. Future enhancement: switch to AWS Organizations tag lookup once org-tagging strategy is finalized.
 
 ## File Organization
 

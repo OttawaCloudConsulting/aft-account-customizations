@@ -25,13 +25,16 @@ locals {
 
 locals {
   # Account IDs that receive no OIDC federation by default (security-tier).
-  # The AFT management account ID is derived from the injected admin role ARN.
-  # Add Audit and Log Archive account IDs here once they are known.
-  security_tier_account_ids = toset([
+  # AFT management ID is derived from the injected admin role ARN; Audit and
+  # Log Archive IDs come from operator-supplied input variables. compact()
+  # drops empty strings so default-empty variables preserve current behavior
+  # when the feature flag is off; cross-variable validation on the variables
+  # blocks plan when they are empty AND the federation flag is on.
+  security_tier_account_ids = toset(compact([
     local.aft_management_account_id,
-    # "<AUDIT_ACCOUNT_ID>",
-    # "<LOG_ARCHIVE_ACCOUNT_ID>",
-  ])
+    var.audit_account_id,
+    var.log_archive_account_id,
+  ]))
 
   # True when the current vended account is a security-tier account.
   is_security_tier_account = contains(local.security_tier_account_ids, data.aws_caller_identity.current.account_id)

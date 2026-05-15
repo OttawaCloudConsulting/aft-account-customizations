@@ -75,3 +75,35 @@ variable "oidc_federation_role_prefix" {
   }
 }
 
+variable "audit_account_id" {
+  description = "AWS account ID of the Control Tower Audit account. Added to local.security_tier_account_ids so OIDC federation is excluded from this account by default. Must be a 12-digit AWS account ID when oidc_federation_enabled = true and oidc_federation_security_tier_accounts = false; otherwise the default-deny guard for security-tier accounts cannot identify it."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.audit_account_id == "" || can(regex("^[0-9]{12}$", var.audit_account_id))
+    error_message = "audit_account_id must be empty or a 12-digit AWS account ID."
+  }
+
+  validation {
+    condition     = !var.oidc_federation_enabled || var.oidc_federation_security_tier_accounts || can(regex("^[0-9]{12}$", var.audit_account_id))
+    error_message = "audit_account_id must be a 12-digit AWS account ID when oidc_federation_enabled = true and oidc_federation_security_tier_accounts = false. The security-tier exclusion cannot identify the account without it."
+  }
+}
+
+variable "log_archive_account_id" {
+  description = "AWS account ID of the Control Tower Log Archive account. Added to local.security_tier_account_ids so OIDC federation is excluded from this account by default. Must be a 12-digit AWS account ID when oidc_federation_enabled = true and oidc_federation_security_tier_accounts = false; otherwise the default-deny guard for security-tier accounts cannot identify it."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.log_archive_account_id == "" || can(regex("^[0-9]{12}$", var.log_archive_account_id))
+    error_message = "log_archive_account_id must be empty or a 12-digit AWS account ID."
+  }
+
+  validation {
+    condition     = !var.oidc_federation_enabled || var.oidc_federation_security_tier_accounts || can(regex("^[0-9]{12}$", var.log_archive_account_id))
+    error_message = "log_archive_account_id must be a 12-digit AWS account ID when oidc_federation_enabled = true and oidc_federation_security_tier_accounts = false. The security-tier exclusion cannot identify the account without it."
+  }
+}
+
