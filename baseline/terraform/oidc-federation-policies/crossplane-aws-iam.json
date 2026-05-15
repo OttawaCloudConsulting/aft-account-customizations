@@ -1,0 +1,19 @@
+{
+  "subject": "system:serviceaccount:crossplane-provider-aws:provider-aws-iam",
+  "role_name_override": "crossplane-aws-iam",
+  "policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "StubPolicyPendingM03Supply",
+        "Effect": "Allow",
+        "Action": [
+          "iam:GetRole",
+          "iam:ListRoles",
+          "iam:ListRoleTags"
+        ],
+        "Resource": "arn:aws:iam::${account_id}:role/*"
+      }
+    ]
+  }
+}

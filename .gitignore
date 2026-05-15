@@ -33,6 +33,14 @@ terraform.rc
 # Uncomment if generated files should be ignored
 # **/*.tf.jinja
 
+# AFT-rendered output of locals-aft.tf.jinja — generated at AFT pipeline time
+# from the .jinja template. Also generated locally as a stub so pre-commit
+# terraform_validate and `terraform test` can resolve local.aft_management_account_id
+# without the full pipeline render. Never commit.
+baseline/terraform/locals-aft.tf
+baseline/terraform/backend.tf
+baseline/terraform/aft-providers.tf
+
 # macOS
 .DS_Store
 .AppleDouble
@@ -70,3 +78,6 @@ ENV/
 
 # AI working files
 agents/
+.claude
+memory/
+**/red-team/**
