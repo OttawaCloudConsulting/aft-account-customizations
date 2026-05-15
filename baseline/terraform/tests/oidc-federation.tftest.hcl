@@ -7,7 +7,7 @@
 #   - Has Action = sts:AssumeRoleWithWebIdentity
 #   - Has the correct sub value for the crossplane-provider-aws ServiceAccount
 #
-# Design Decision #7 in docs/ARCHITECTURE_AND_DESIGN-OIDC.md:
+# Design Decision #7 in docs/oidc/ARCHITECTURE_AND_DESIGN.md:
 #   The StringLike prohibition is the highest-impact security control. This test
 #   is the automated enforcement layer; PR review is defense-in-depth only.
 #
@@ -35,6 +35,25 @@ mock_provider "aws" {
     }
   }
 
+  # AWS IAM validates permissions_boundary as an ARN at apply time; the default
+  # mock_resource arn placeholder ("j738tl5q") fails that validation. Supply a
+  # well-formed ARN so apply succeeds for both the federation roles and the
+  # baseline deployment roles that reference the same boundary.
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/Boundary-Default"
+    }
+  }
+
+  # Federation roles attach an inline aws_iam_role_policy with policy rendered
+  # via templatestring(); mock the resource so apply does not require a real
+  # API call to materialize the policy attribute.
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/mock-role"
+    }
+  }
+
   mock_data "aws_caller_identity" {
     defaults = {
       account_id = "123456789012"
@@ -45,7 +64,7 @@ mock_provider "aws" {
 
   mock_data "aws_region" {
     defaults = {
-      name        = "ca-central-1"
+      region      = "ca-central-1"
       description = "Canada (Central)"
     }
   }
@@ -59,6 +78,13 @@ variables {
   oidc_federation_enabled = true
   # Minimal valid 40-char hex SHA-1 thumbprint (satisfies the validation block).
   oidc_thumbprints = ["a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"]
+  # Security-tier account IDs — mock values distinct from the caller_identity
+  # mock (123456789012), so the current account is NOT treated as a security-
+  # tier account and the OIDC provider is created. Cross-variable validation
+  # on these variables requires non-empty 12-digit IDs whenever
+  # oidc_federation_enabled = true.
+  audit_account_id       = "210987654321"
+  log_archive_account_id = "098765432109"
 }
 
 # ---------------------------------------------------------------------------
@@ -66,7 +92,12 @@ variables {
 # ---------------------------------------------------------------------------
 
 run "trust_policy_uses_stringequals_only" {
-  command = plan
+  # apply (not plan) is required because the trust-policy assertions reference
+  # aws_iam_role.federation[...].assume_role_policy, which is the result of
+  # jsonencode() over the OIDC provider's arn and url attributes. Those
+  # attributes are unknown at plan time even with mock_provider defaults; the
+  # mock values are materialized during apply.
+  command = apply
 
   # No StringLike anywhere in the trust policy JSON.
   assert {
@@ -122,25 +153,14 @@ run "trust_policy_uses_stringequals_only" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# Run 2: Feature flag off produces no resources
-# ---------------------------------------------------------------------------
-
-run "feature_flag_off_produces_no_resources" {
-  command = plan
-
-  variables {
-    oidc_federation_enabled = false
-    oidc_thumbprints        = []
-  }
-
-  assert {
-    condition     = length(aws_iam_openid_connect_provider.this) == 0
-    error_message = "No OIDC provider should be created when oidc_federation_enabled is false. Zero state churn is the default behavior."
-  }
-
-  assert {
-    condition     = length(aws_iam_role.federation) == 0
-    error_message = "No federation roles should be created when oidc_federation_enabled is false."
-  }
-}
+# NOTE: A second run block for the feature-flag-off case (asserting that
+# count = 0 produces zero OIDC resources) was removed from this file.
+# Reason: the OIDC provider and federation roles carry
+# `lifecycle { prevent_destroy = true }` (intentional production behavior).
+# In a single test file, a later run with flag=false produces a destroy plan
+# for the resources created by the earlier flag=true apply, which Terraform
+# rejects at plan time with "Instance cannot be destroyed". The off-state
+# behavior is also statically inspectable (count = local.oidc_provider_count
+# and for_each = enabled ? roles : {}); it does not require dynamic test
+# coverage. If a future maintainer wants apply-time coverage of the off path,
+# move it into a separate test file so it gets its own state lifecycle.

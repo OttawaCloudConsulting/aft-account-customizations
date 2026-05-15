@@ -128,7 +128,7 @@ resource "aws_iam_role_policy" "federation" {
   # oidc-federation-policies/README.md. Requires Terraform >= 1.8. Design Decision #16.
   policy = templatestring(local.oidc_role_policy_templates[each.key], {
     account_id          = data.aws_caller_identity.current.account_id
-    region              = data.aws_region.current.name
+    region              = data.aws_region.current.region
     cluster_issuer_host = trimprefix(var.oidc_issuer_url, "https://")
   })
 }
