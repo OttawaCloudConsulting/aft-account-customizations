@@ -35,7 +35,7 @@ resource "aws_iam_policy" "boundaries" {
       local.template_vars,
       {
         # Boundary-specific variable for self-reference in conditions
-        boundary_name = each.key
+        boundary_name = "${var.boundary_policy_prefix}-${each.key}"
       }
     )
   )
